@@ -1,0 +1,38 @@
+{
+  "name": "create-cellsweb-rpc-api",
+  "version": "1.0.24",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Scaffold a production-ready CellsWeb RPC API service with @cellsweb/rpc-core",
+  "bin": {
+    "create-cellsweb-rpc": "bin/create.js",
+    "create-cellsweb-rpc-api": "bin/create.js",
+    "crpc": "bin/crpc.js"
+  },
+  "files": [
+    "bin",
+    "template",
+    "templates"
+  ],
+  "scripts": {
+    "test": "echo \"CLI scaffolder test suite\""
+  },
+  "keywords": [
+    "rpc",
+    "create-app",
+    "scaffolder",
+    "boilerplate",
+    "cellsweb"
+  ],
+  "author": "Minhazur Rahman",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MinhazurSarker/cellsweb-rpc.git"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.7.0"
+  }
+}

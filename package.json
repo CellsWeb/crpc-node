@@ -1,0 +1,45 @@
+{
+  "name": "@minhazursarker/create-cellsweb-rpc-api",
+  "version": "1.0.4",
+  "description": "Scaffold a production-ready CellsWeb RPC API boilerplate",
+  "keywords": [
+    "rpc",
+    "api",
+    "boilerplate",
+    "node",
+    "typescript",
+    "typebox"
+  ],
+  "author": "MinhazurSarker",
+  "license": "UNLICENSED",
+  "main": "bin/create.js",
+  "bin": {
+    "create-cellsweb-rpc-api": "bin/create.js"
+  },
+  "files": [
+    "bin",
+    "template"
+  ],
+  "scripts": {
+    "prepublishOnly": "echo 'Publishing @minhazursarker/create-cellsweb-rpc-api'"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MinhazurSarker/cellsweb-rpc.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
