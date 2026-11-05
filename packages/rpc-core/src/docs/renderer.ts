@@ -21,12 +21,20 @@
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
 import type { Registry, RegisteredFunction, RegisteredMiddleware } from "../registry";
+import { ErrorCode } from "../errors";
 import {
   isFileSchema,
   isFilesSchema,
   isFormNumSchema,
   isFormBoolSchema,
 } from "../utils/typebox";
+
+function normalizeDocsEndpoint(endpoint?: string): string {
+  let cleaned = (endpoint ?? "/docs").trim();
+  if (!cleaned.startsWith("/")) cleaned = "/" + cleaned;
+  if (cleaned.length > 1 && cleaned.endsWith("/")) cleaned = cleaned.slice(0, -1);
+  return cleaned;
+}
 
 function typeboxToExample(schema?: any): unknown {
   if (!schema || typeof schema !== "object") return null;
@@ -35,7 +43,7 @@ function typeboxToExample(schema?: any): unknown {
   if (isFilesSchema(schema)) return ["(File)"];
   if (isFormNumSchema(schema)) {
     const numVariant = Array.isArray(schema.anyOf) ? schema.anyOf.find((v: any) => v.type === "number") : null;
-    return numVariant?.minimum ?? 49.99;
+    return numVariant?.minimum ?? 1;
   }
   if (isFormBoolSchema(schema)) return true;
 
@@ -366,7 +374,8 @@ function groupFunctionsByNamespace(registry: Registry): Record<string, Registere
   return grouped;
 }
 
-function buildSidebar(registry: Registry, activeKey?: string): string {
+function buildSidebar(registry: Registry, activeKey?: string, docsEndpoint = "/docs"): string {
+  const normDocs = normalizeDocsEndpoint(docsEndpoint);
   const grouped = groupFunctionsByNamespace(registry);
   const sortedNs = Object.keys(grouped).sort();
   let out = "";
@@ -378,7 +387,7 @@ function buildSidebar(registry: Registry, activeKey?: string): string {
       const isJson = fn.contentType === "application/json";
       const badgeText = isJson ? "JSON" : "FORM";
       out += `
-        <a class="sidebar-fn${isActive ? " active" : ""}" href="/docs/${escHtml(fn.namespace.replace(/\./g, "/"))}/${escHtml(fn.functionName)}">
+        <a class="sidebar-fn${isActive ? " active" : ""}" href="${normDocs}/${escHtml(fn.namespace.replace(/\./g, "/"))}/${escHtml(fn.functionName)}">
           <span>${escHtml(fn.functionName)}</span>
           <span class="sidebar-fn-badge">${badgeText}</span>
         </a>`;
@@ -391,7 +400,7 @@ function buildSidebar(registry: Registry, activeKey?: string): string {
     for (const mw of middlewares) {
       const isActive = activeKey === `mw:${mw.name}`;
       out += `
-        <a class="sidebar-fn${isActive ? " active" : ""}" href="/docs/middlewares/${escHtml(mw.name)}">
+        <a class="sidebar-fn${isActive ? " active" : ""}" href="${normDocs}/middlewares/${escHtml(mw.name)}">
           <span>⚡ ${escHtml(mw.name)}</span>
           <span class="sidebar-fn-badge">MW</span>
         </a>`;
@@ -401,7 +410,8 @@ function buildSidebar(registry: Registry, activeKey?: string): string {
   return out || `<div class="sidebar-fn" style="color:var(--muted)">No functions loaded</div>`;
 }
 
-function htmlShell(title: string, bodyContent: string, sidebarHtml: string): string {
+function htmlShell(title: string, bodyContent: string, sidebarHtml: string, docsEndpoint = "/docs"): string {
+  const normDocs = normalizeDocsEndpoint(docsEndpoint);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -414,7 +424,7 @@ function htmlShell(title: string, bodyContent: string, sidebarHtml: string): str
 <div class="layout">
   <nav class="sidebar">
     <div class="sidebar-header">
-      <a href="/docs" style="text-decoration:none">
+      <a href="${normDocs}" style="text-decoration:none">
         <div class="sidebar-logo">
           <span>CellsWeb RPC</span>
           <span class="sidebar-logo-badge">DOCS</span>
@@ -619,7 +629,9 @@ export function renderDocsIndex(
   registry: Registry,
   serverUrl = "",
   rpcEndpoint = "/rpc",
+  docsEndpoint = "/docs",
 ): string {
+  const normDocs = normalizeDocsEndpoint(docsEndpoint);
   const grouped = groupFunctionsByNamespace(registry);
   const sortedNs = Object.keys(grouped).sort();
   const totalFns = registry.functions.size;
@@ -655,7 +667,7 @@ export function renderDocsIndex(
       const mwSubtitle = mwNames ? `Middlewares: ${mwNames}` : "No middleware";
 
       body += `
-        <a href="/docs/${escHtml(fn.namespace.replace(/\./g, "/"))}/${escHtml(fn.functionName)}" style="text-decoration:none;display:block;">
+        <a href="${normDocs}/${escHtml(fn.namespace.replace(/\./g, "/"))}/${escHtml(fn.functionName)}" style="text-decoration:none;display:block;">
           <div class="fn-card" data-name="${escHtml(fn.functionName)}" data-ns="${escHtml(ns)}">
             <div class="fn-card-name">${escHtml(fn.functionName)}</div>
             ${metadata.description ? `<div class="fn-card-desc">${escHtml(metadata.description)}</div>` : ""}
@@ -687,14 +699,7 @@ export function renderDocsIndex(
     `;
 
     for (const mw of middlewares) {
-      const rawDesc =
-        mw.metadata?.description ??
-        (mw.name === "rateLimit"
-          ? "Enforces per-function rate limits keyed on IP + namespace + functionName"
-          : mw.name === "auth"
-          ? "Validates bearer token and enforces allowed roles"
-          : `Custom ${mw.name} middleware`);
-
+      const rawDesc = mw.metadata?.description ?? `Custom ${mw.name} middleware`;
       body += renderMiddlewareCardContent(mw.name, rawDesc, undefined, mw, true);
     }
 
@@ -716,17 +721,18 @@ export function renderDocsIndex(
     2,
   );
 
-  const errorCodes: Array<{ code: string; when: string }> = [
-    { code: "invalid_request", when: "Missing or malformed top-level fields (namespace, functionName, data)" },
-    { code: "not_found", when: "namespace.functionName combination is not registered" },
-    { code: "validation_error", when: "Input data failed the function's TypeBox inputSchema" },
-    { code: "schema_mismatch", when: "Output data failed outputSchema — indicates a bug in run.ts" },
-    { code: "unauthorized", when: "Auth middleware rejected the token (missing or expired)" },
-    { code: "forbidden", when: "Token is valid but the user's role is not in the allowed list" },
-    { code: "rate_limited", when: "Caller exceeded maxRequests / windowSeconds rate limit" },
-    { code: "payload_too_large", when: "Request body exceeds maximum payload size" },
-    { code: "parse_error", when: "Request body is not valid JSON" },
-    { code: "internal_error", when: "Unhandled exception in run.ts or a middleware" },
+  const errorCodes: Array<{ code: ErrorCode; when: string }> = [
+    { code: ErrorCode.INVALID_CONTENT_TYPE, when: "Content-Type is missing or not application/json or multipart/form-data" },
+    { code: ErrorCode.INVALID_BODY, when: "Missing, malformed, or empty request body (namespace, functionName, data)" },
+    { code: ErrorCode.FUNCTION_NOT_FOUND, when: "The requested function is not registered in the RPC server" },
+    { code: ErrorCode.VALIDATION_ERROR, when: "Input data failed the function's TypeBox inputSchema validation" },
+    { code: ErrorCode.UNAUTHORIZED, when: "Auth middleware rejected credentials or authorization token" },
+    { code: ErrorCode.FORBIDDEN, when: "User is authenticated but lacks required role or permission" },
+    { code: ErrorCode.RATE_LIMITED, when: "Caller exceeded configured rate limits (windowSeconds / maxRequests)" },
+    { code: ErrorCode.SCHEMA_MISMATCH, when: "Function output failed outputSchema contract — server implementation bug" },
+    { code: ErrorCode.PAYLOAD_TOO_LARGE, when: "Request body or uploaded file size exceeds maximum limits" },
+    { code: ErrorCode.TIMEOUT, when: "Function execution exceeded configured timeout threshold" },
+    { code: ErrorCode.INTERNAL_ERROR, when: "Internal unhandled error or missing middleware registration" },
   ];
 
   const errorCodeRows = errorCodes
@@ -823,17 +829,16 @@ export function renderDocsIndex(
     </script>
   `;
 
-  return htmlShell("API Documentation", body, buildSidebar(registry));
+  return htmlShell("API Documentation", body, buildSidebar(registry, undefined, normDocs), normDocs);
 }
 
-export function renderMiddlewareDoc(registry: Registry, mw: RegisteredMiddleware): string {
-  const rawDesc =
-    mw.metadata?.description ??
-    (mw.name === "rateLimit"
-      ? "Enforces per-function rate limits keyed on IP + namespace + functionName"
-      : mw.name === "auth"
-      ? "Validates bearer token and enforces allowed roles"
-      : `Custom ${mw.name} middleware`);
+export function renderMiddlewareDoc(
+  registry: Registry,
+  mw: RegisteredMiddleware,
+  docsEndpoint = "/docs",
+): string {
+  const normDocs = normalizeDocsEndpoint(docsEndpoint);
+  const rawDesc = mw.metadata?.description ?? `Custom ${mw.name} middleware`;
 
   const headersSchemaObj = typeboxToJsonSchemaObject(mw.headersSchema);
   const optionsSchemaObj = typeboxToJsonSchemaObject(mw.optionsSchema);
@@ -841,7 +846,7 @@ export function renderMiddlewareDoc(registry: Registry, mw: RegisteredMiddleware
   let body = `
     <div class="page-header">
       <div class="page-breadcrumb">
-        <a href="/docs">← All functions & middlewares</a>
+        <a href="${normDocs}">← All functions & middlewares</a>
         <span>/</span>
         <span>middlewares</span>
       </div>
@@ -875,7 +880,7 @@ export function renderMiddlewareDoc(registry: Registry, mw: RegisteredMiddleware
     `;
   }
 
-  return htmlShell(`⚡ ${mw.name} — Middleware Docs`, body, buildSidebar(registry, `mw:${mw.name}`));
+  return htmlShell(`⚡ ${mw.name} — Middleware Docs`, body, buildSidebar(registry, `mw:${mw.name}`, normDocs), normDocs);
 }
 
 export function renderFunctionDoc(
@@ -883,7 +888,9 @@ export function renderFunctionDoc(
   fn: RegisteredFunction,
   serverUrl: string,
   rpcEndpoint = "/rpc",
+  docsEndpoint = "/docs",
 ): string {
+  const normDocs = normalizeDocsEndpoint(docsEndpoint);
   const cleanServer = serverUrl.replace(/\/$/, "");
   const cleanRpc = rpcEndpoint.startsWith("/") ? rpcEndpoint : `/${rpcEndpoint}`;
   const fullRpcUrl = `${cleanServer}${cleanRpc}`;
@@ -921,13 +928,7 @@ export function renderFunctionDoc(
   for (const mwItem of fn.middlewares) {
     const centralMw = registry.middlewares.get(mwItem.name);
     const optsObj = mwItem.options ?? {};
-    const rawDesc =
-      centralMw?.metadata?.description ??
-      (mwItem.name === "rateLimit"
-        ? "Enforces per-function rate limits keyed on IP + namespace + functionName"
-        : mwItem.name === "auth"
-        ? "Validates bearer token and enforces allowed roles"
-        : `Custom ${mwItem.name} middleware`);
+    const rawDesc = centralMw?.metadata?.description ?? `Custom ${mwItem.name} middleware`;
 
     middlewareCards.push(renderMiddlewareCardContent(mwItem.name, rawDesc, optsObj, centralMw, false));
 
@@ -967,7 +968,7 @@ export function renderFunctionDoc(
   let body = `
     <div class="page-header">
       <div class="page-breadcrumb">
-        <a href="/docs">← All functions</a>
+        <a href="${normDocs}">← All functions</a>
         <span>/</span>
         <span>${escHtml(fn.namespace)}</span>
       </div>
@@ -1066,7 +1067,7 @@ export function renderFunctionDoc(
     body += render2ColumnSchemaSection("Output Data Contract", outputJsonSchema, "application/json");
   }
 
-  return htmlShell(`${fn.functionName} — API Docs`, body, buildSidebar(registry, fn.key));
+  return htmlShell(`${fn.functionName} — API Docs`, body, buildSidebar(registry, fn.key, normDocs), normDocs);
 }
 
 export function renderDocsHtml(
@@ -1074,29 +1075,41 @@ export function renderDocsHtml(
   serverUrl: string,
   pathUrl = "/docs",
   rpcEndpoint = "/rpc",
+  docsEndpoint = "/docs",
 ): string {
+  const normDocsEndpoint = normalizeDocsEndpoint(docsEndpoint);
   const cleanPath = pathUrl.split("?")[0].replace(/\/+$/, "");
-  const parts = cleanPath.split("/").filter(Boolean);
 
-  if (parts.length === 3 && parts[0] === "docs" && parts[1] === "middlewares") {
-    const mwName = parts[2];
+  let relativeSubPath = "";
+  if (cleanPath === normDocsEndpoint) {
+    relativeSubPath = "";
+  } else if (cleanPath.startsWith(normDocsEndpoint + "/")) {
+    relativeSubPath = cleanPath.slice(normDocsEndpoint.length + 1);
+  } else {
+    relativeSubPath = cleanPath.replace(/^\/+/, "");
+  }
+
+  const parts = relativeSubPath.split("/").filter(Boolean);
+
+  if (parts.length === 2 && parts[0] === "middlewares") {
+    const mwName = parts[1];
     const mw = registry.middlewares.get(mwName);
     if (mw) {
-      return renderMiddlewareDoc(registry, mw);
+      return renderMiddlewareDoc(registry, mw, normDocsEndpoint);
     }
   }
 
-  if (parts.length >= 3 && parts[0] === "docs") {
-    const nsParts = parts.slice(1, parts.length - 1);
+  if (parts.length >= 2) {
+    const nsParts = parts.slice(0, parts.length - 1);
     const fnName = parts[parts.length - 1];
     const ns = nsParts.join(".");
     const targetKey = `${ns}.${fnName}`;
 
     const fn = registry.functions.get(targetKey);
     if (fn) {
-      return renderFunctionDoc(registry, fn, serverUrl, rpcEndpoint);
+      return renderFunctionDoc(registry, fn, serverUrl, rpcEndpoint, normDocsEndpoint);
     }
   }
 
-  return renderDocsIndex(registry, serverUrl, rpcEndpoint);
+  return renderDocsIndex(registry, serverUrl, rpcEndpoint, normDocsEndpoint);
 }

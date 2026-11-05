@@ -87,6 +87,34 @@ async function main() {
     }
   }
 
+  // Parse non-interactive, package name, and package manager flags
+  const hasYesFlag =
+    args.includes("-y") ||
+    args.includes("--yes") ||
+    args.includes("--non-interactive");
+
+  let explicitName = null;
+  const nameFlagIdx = args.findIndex((arg) => arg === "--name" || arg === "-n");
+  if (nameFlagIdx !== -1 && args[nameFlagIdx + 1]) {
+    explicitName = args[nameFlagIdx + 1].trim();
+  } else {
+    const inlineName = args.find((arg) => arg.startsWith("--name="));
+    if (inlineName) {
+      explicitName = inlineName.split("=")[1]?.trim();
+    }
+  }
+
+  let explicitPm = null;
+  const pmFlagIdx = args.findIndex((arg) => arg === "--pm");
+  if (pmFlagIdx !== -1 && args[pmFlagIdx + 1]) {
+    explicitPm = args[pmFlagIdx + 1].trim();
+  } else {
+    const inlinePm = args.find((arg) => arg.startsWith("--pm="));
+    if (inlinePm) {
+      explicitPm = inlinePm.split("=")[1]?.trim();
+    }
+  }
+
   function normalizeFramework(input) {
     if (!input) return "node";
     const str = String(input).toLowerCase().trim();
@@ -104,7 +132,7 @@ async function main() {
 
   if (rawArg) {
     targetDir = path.resolve(process.cwd(), rawArg);
-  } else if (!isTTY) {
+  } else if (!isTTY || hasYesFlag) {
     targetDir = path.resolve(process.cwd(), "./api");
   } else {
     const answer = await ask("Target directory", "./api");
@@ -116,14 +144,17 @@ async function main() {
       ? "my-rpc-api"
       : path.basename(targetDir);
 
-  if (!isTTY) {
-    projectName = defaultName;
-    pm = "pnpm";
+  const shouldPrompt = isTTY && !hasYesFlag;
+
+  if (!shouldPrompt) {
+    projectName = explicitName || defaultName;
+    pm = explicitPm || "pnpm";
     framework = normalizeFramework(explicitFramework);
     rl.close();
   } else {
-    projectName = await ask("Package name", defaultName);
-    const pmAnswer = await ask("Package manager  [npm / pnpm / yarn]", "pnpm");
+    projectName = explicitName || (await ask("Package name", defaultName));
+    const pmAnswer =
+      explicitPm || (await ask("Package manager  [npm / pnpm / yarn]", "pnpm"));
     pm = ["npm", "pnpm", "yarn"].includes(pmAnswer) ? pmAnswer : "pnpm";
 
     if (explicitFramework) {
@@ -179,8 +210,8 @@ async function main() {
       node: ">=20.0.0",
     },
     dependencies: {
-      "@cellsweb/rpc-core": "^1.0.28",
-      "create-cellsweb-rpc-api": "^1.0.24",
+      "@cellsweb/rpc-core": "^1.0.29",
+      "create-cellsweb-rpc-api": "^1.0.25",
       "@aws-sdk/client-s3": "^3.700.0",
       "@paralleldrive/cuid2": "^2.2.2",
       "@sentry/node": "^8.40.0",
@@ -201,7 +232,6 @@ async function main() {
       "@types/node": "^22.15.18",
       "@vitest/coverage-v8": "^3.2.4",
       "@vitest/ui": "^3.2.4",
-      "mongodb-memory-server": "^10.1.4",
       "pino-pretty": "^13.0.0",
       "tsc-alias": "^1.8.17",
       "tsx": "^4.22.0",
@@ -209,7 +239,7 @@ async function main() {
       "vitest": "^3.2.4",
     },
     pnpm: {
-      onlyBuiltDependencies: ["esbuild", "mongodb-memory-server"],
+      onlyBuiltDependencies: ["esbuild"],
     },
   };
 
@@ -252,10 +282,11 @@ async function main() {
   // ── 6. Write scripts/tsconfig.json ────────────────────────────────────────
   const scriptsTsconfig = {
     compilerOptions: {
-      target: "ES2022",
-      module: "CommonJS",
-      moduleResolution: "node",
-      lib: ["ES2022"],
+      target: "ES2023",
+      module: "nodenext",
+      moduleResolution: "nodenext",
+      lib: ["ES2023"],
+      types: ["node"],
       strict: true,
       esModuleInterop: true,
       skipLibCheck: true,
@@ -275,7 +306,7 @@ async function main() {
   const giPath = path.join(targetDir, ".gitignore");
   if (!fs.existsSync(giPath)) fs.writeFileSync(giPath, gitignore);
 
-  const npmrc = "onlyBuiltDependencies=esbuild,mongodb-memory-server\n";
+  const npmrc = "onlyBuiltDependencies=esbuild\n";
   const npmrcPath = path.join(targetDir, ".npmrc");
   if (!fs.existsSync(npmrcPath)) fs.writeFileSync(npmrcPath, npmrc);
 
@@ -290,7 +321,9 @@ async function main() {
   console.log(`  ${dim("Installing dependencies with")} ${bold(pm)} ...\n`);
   try {
     const installCmd =
-      pm === "pnpm" ? "pnpm install && pnpm approve-builds --all" : `${pm} install`;
+      pm === "pnpm"
+        ? "pnpm install || (pnpm approve-builds esbuild && pnpm install)"
+        : `${pm} install`;
     execSync(installCmd, { cwd: targetDir, stdio: "inherit" });
   } catch {
     console.log(`  ${yellow("⚠")}  Install failed — run ${bold(`${pm} install`)} manually.\n`);
@@ -320,7 +353,7 @@ async function main() {
   ${dim("Add your JWT logic in:")}
     ${cyan("src/middlewares/auth/run.ts")}  ${dim("→ verifyToken()")}
 
-  ${dim("API endpoint:")}  POST ${cyan("http://localhost:4000/api")} (or ${cyan("/rpc")})
+  ${dim("API endpoint:")}  POST ${cyan("http://localhost:4000/rpc")}
   ${dim("Docs:")}          GET  ${cyan("http://localhost:4000/docs")}
 `);
 }

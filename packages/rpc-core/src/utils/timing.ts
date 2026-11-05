@@ -10,6 +10,10 @@ export async function withTimeout<T>(
   timeoutMs: number,
   operationName = "Operation",
 ): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return promise;
+  }
+
   let timerId: NodeJS.Timeout | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {

@@ -68,7 +68,13 @@ function sendMultipartXHR<TData>(
           resolve(json.data);
         }
       } catch {
-        reject(new RpcError({ message: "Failed to parse server response", code: "parse_error" }));
+        reject(
+          new RpcError({
+            message: `Failed to parse server response (${xhr.status})`,
+            code: "parse_error",
+            status: xhr.status,
+          }),
+        );
       }
     };
 
@@ -85,7 +91,37 @@ function sendMultipartXHR<TData>(
     };
 
     if (signal) {
-      signal.addEventListener("abort", () => xhr.abort(), { once: true });
+      if (signal.aborted) {
+        reject(new RpcError({ message: "RPC Request aborted", code: "aborted" }));
+        return;
+      }
+      const onAbort = () => xhr.abort();
+      signal.addEventListener("abort", onAbort, { once: true });
+      const originalOnLoad = xhr.onload;
+      const originalOnError = xhr.onerror;
+      const originalOnTimeout = xhr.ontimeout;
+      const originalOnAbort = xhr.onabort;
+
+      const removeAbortListener = () => {
+        signal.removeEventListener("abort", onAbort);
+      };
+
+      xhr.onload = (e) => {
+        removeAbortListener();
+        if (typeof originalOnLoad === "function") originalOnLoad.call(xhr, e);
+      };
+      xhr.onerror = (e) => {
+        removeAbortListener();
+        if (typeof originalOnError === "function") originalOnError.call(xhr, e);
+      };
+      xhr.ontimeout = (e) => {
+        removeAbortListener();
+        if (typeof originalOnTimeout === "function") originalOnTimeout.call(xhr, e);
+      };
+      xhr.onabort = (e) => {
+        removeAbortListener();
+        if (typeof originalOnAbort === "function") originalOnAbort.call(xhr, e);
+      };
     }
 
     xhr.send(formData);
@@ -122,29 +158,53 @@ export async function rawRpcRequest<TData = unknown>(
   }
 
   let targetUrl = baseUrl.replace(/\/+$/, "");
-  const cleanEp = rpcEndpoint.startsWith("/") ? rpcEndpoint : `/${rpcEndpoint}`;
-  if (!targetUrl.endsWith(cleanEp)) {
-    // Only append endpoint if targetUrl is root domain/host or doesn't match an endpoint
-    try {
-      const parsed = new URL(targetUrl);
-      if (parsed.pathname === "" || parsed.pathname === "/") {
+  if (rpcEndpoint && rpcEndpoint.trim().length > 0) {
+    const cleanEp = rpcEndpoint.startsWith("/") ? rpcEndpoint : `/${rpcEndpoint}`;
+    if (!targetUrl.endsWith(cleanEp)) {
+      // Only append endpoint if targetUrl is root domain/host or doesn't match an endpoint
+      try {
+        const parsed = new URL(targetUrl);
+        if (parsed.pathname === "" || parsed.pathname === "/") {
+          targetUrl = `${targetUrl}${cleanEp}`;
+        }
+      } catch {
         targetUrl = `${targetUrl}${cleanEp}`;
       }
-    } catch {
-      targetUrl = `${targetUrl}${cleanEp}`;
     }
   }
 
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
+  const onUserAbort = () => abortController.abort();
+
+  if (userSignal) {
+    if (userSignal.aborted) {
+      clearTimeout(timeoutId);
+      throw new RpcError({ message: "RPC Request aborted", code: "aborted" });
+    }
+    userSignal.addEventListener("abort", onUserAbort, { once: true });
+  }
 
   try {
     const headers: Record<string, string> = { ...customHeaders };
-    const mergedData = { ...(defaultBody ?? {}), ...(data ?? {}) };
+    const isPlainObject = (val: unknown): val is Record<string, unknown> =>
+      typeof val === "object" && val !== null && !Array.isArray(val);
+
+    let mergedData: unknown;
+    if (defaultBody && isPlainObject(defaultBody) && isPlainObject(data)) {
+      mergedData = { ...defaultBody, ...data };
+    } else {
+      mergedData = data !== undefined ? data : (defaultBody ?? {});
+    }
+
     const isMultipart = multipart || hasMultipartData(mergedData);
 
     if (isMultipart) {
-      const formData = buildRpcFormData(namespace, functionName, mergedData);
+      const formData = buildRpcFormData(
+        namespace,
+        functionName,
+        mergedData as Record<string, unknown>,
+      );
 
       // Delete any inherited Content-Type — XHR sets it automatically with boundary
       for (const k of Object.keys(headers)) {
@@ -160,7 +220,7 @@ export async function rawRpcRequest<TData = unknown>(
           formData,
           headers,
           timeoutMs,
-          userSignal ?? abortController.signal,
+          abortController.signal,
         );
       }
 
@@ -169,10 +229,20 @@ export async function rawRpcRequest<TData = unknown>(
         method: "POST",
         headers,
         body: formData,
-        signal: userSignal ?? abortController.signal,
+        signal: abortController.signal,
       });
 
-      const json: RpcResponse<TData> = await response.json();
+      let json: RpcResponse<TData>;
+      try {
+        json = await response.json();
+      } catch {
+        throw new RpcError({
+          message: `Server returned non-JSON response with HTTP status ${response.status}`,
+          code: "parse_error",
+          status: response.status,
+        });
+      }
+
       if (json.status === "error") {
         throw new RpcError({
           message: json.message ?? "RPC Request failed",
@@ -190,10 +260,20 @@ export async function rawRpcRequest<TData = unknown>(
         method: "POST",
         headers,
         body,
-        signal: userSignal ?? abortController.signal,
+        signal: abortController.signal,
       });
 
-      const json: RpcResponse<TData> = await response.json();
+      let json: RpcResponse<TData>;
+      try {
+        json = await response.json();
+      } catch {
+        throw new RpcError({
+          message: `Server returned non-JSON response with HTTP status ${response.status}`,
+          code: "parse_error",
+          status: response.status,
+        });
+      }
+
       if (json.status === "error") {
         throw new RpcError({
           message: json.message ?? "RPC Request failed",
@@ -206,6 +286,9 @@ export async function rawRpcRequest<TData = unknown>(
     }
   } catch (err: unknown) {
     if ((err as { name?: string })?.name === "AbortError") {
+      if (userSignal?.aborted) {
+        throw new RpcError({ message: "RPC Request aborted", code: "aborted" });
+      }
       throw new RpcError({ message: "RPC Request timeout", code: "timeout", status: 408 });
     }
     if (err instanceof RpcError) throw err;
@@ -215,6 +298,9 @@ export async function rawRpcRequest<TData = unknown>(
     });
   } finally {
     clearTimeout(timeoutId);
+    if (userSignal) {
+      userSignal.removeEventListener("abort", onUserAbort);
+    }
   }
 }
 
@@ -227,7 +313,6 @@ export class RpcClient {
   constructor(config: RpcClientConfig) {
     this.config = {
       ...config,
-      rpcEndpoint: config.rpcEndpoint ?? "",
       timeoutMs: config.timeoutMs ?? 30000,
     };
   }

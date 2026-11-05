@@ -32,7 +32,7 @@ export interface RpcClientConfig {
   fetchFn?: typeof fetch;
 }
 
-export interface RawRpcRequestOptions<TVariables = Record<string, unknown>> {
+export interface RawRpcRequestOptions<TVariables = unknown> {
   baseUrl: string;
   rpcEndpoint?: string;
   namespace: string;
@@ -46,7 +46,7 @@ export interface RawRpcRequestOptions<TVariables = Record<string, unknown>> {
   fetchFn?: typeof fetch;
 }
 
-export interface RpcRequestOptions<TVariables = Record<string, unknown>> {
+export interface RpcRequestOptions<TVariables = unknown> {
   namespace: string;
   functionName: string;
   data?: TVariables;

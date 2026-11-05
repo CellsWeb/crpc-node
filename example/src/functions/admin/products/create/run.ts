@@ -15,8 +15,8 @@
 
 import type { Static } from "@sinclair/typebox";
 import type { InferContext } from "@cellsweb/rpc-core";
-import { middlewares } from "./middlewares";
-import { inputSchema, outputSchema } from "./constants";
+import type { middlewares } from "./middlewares";
+import type { inputSchema, outputSchema } from "./constants";
 
 type Input = Static<typeof inputSchema>;
 type Output = Static<typeof outputSchema>;

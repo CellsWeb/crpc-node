@@ -7,6 +7,7 @@ import { createId } from "@paralleldrive/cuid2";
 import mime from "mime-types";
 import { AppError, ErrorCode } from "../errors";
 import { UploadedFile } from "../uploads/types";
+import { validateRoutingIdentifier } from "./routing";
 
 export interface MultipartStreamResult {
   readonly fields: Record<string, string | string[]>;
@@ -21,21 +22,38 @@ export interface ParsedMultipartRpcPayload {
   readonly tempFilesToCleanup: string[];
 }
 
+const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function sanitizeParsedJson(obj: unknown): unknown {
+  if (obj === null || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeParsedJson);
+  const clean: Record<string, unknown> = Object.create(null);
+  for (const [k, v] of Object.entries(obj)) {
+    if (FORBIDDEN_KEYS.has(k)) continue;
+    clean[k] = sanitizeParsedJson(v);
+  }
+  return clean;
+}
+
 export async function parseMultipartStream(
   req: IncomingMessage | any,
   maxMultipartBytes?: number,
   maxSingleFileBytes?: number,
 ): Promise<MultipartStreamResult> {
-  const maxTotal = maxMultipartBytes ?? (process.env.MAX_MULTIPART_BYTES ? Number(process.env.MAX_MULTIPART_BYTES) : 25_000_000);
-  const maxFile = maxSingleFileBytes ?? (process.env.MAX_UPLOAD_FILE_BYTES ? Number(process.env.MAX_UPLOAD_FILE_BYTES) : 10_000_000);
+  const maxTotal =
+    maxMultipartBytes ??
+    (process.env.MAX_MULTIPART_BYTES ? Number(process.env.MAX_MULTIPART_BYTES) : 25_000_000);
+  const maxFile =
+    maxSingleFileBytes ??
+    (process.env.MAX_UPLOAD_FILE_BYTES ? Number(process.env.MAX_UPLOAD_FILE_BYTES) : 10_000_000);
 
-  const fields: Record<string, string | string[]> = {};
-  const files: Record<string, UploadedFile | UploadedFile[]> = {};
+  const fields: Record<string, string | string[]> = Object.create(null);
+  const files: Record<string, UploadedFile | UploadedFile[]> = Object.create(null);
   const tempFilesToCleanup: string[] = [];
 
   const tmpDir = process.env.UPLOAD_TMP_DIR ?? path.join(os.tmpdir(), "cellsweb-uploads");
   if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
   }
 
   const rawReq = req.raw ?? req;
@@ -45,14 +63,88 @@ export async function parseMultipartStream(
     headers,
     limits: {
       fileSize: maxFile,
+      files: 20,
+      fields: 100,
+      fieldSize: 1024 * 1024, // 1MB per field
+      parts: 150,
     },
   });
 
   return new Promise((resolve, reject) => {
     let totalBytesRead = 0;
+    let aborted = false;
+    const activeStreams = new Set<fs.WriteStream>();
     const filePromises: Promise<void>[] = [];
 
+    const onReqClose = () => {
+      if (!rawReq.complete && !aborted) {
+        abortAll(new AppError(ErrorCode.INVALID_BODY, "Client disconnected before multipart upload completed"));
+      }
+    };
+    const onReqError = (err: Error) => {
+      abortAll(err);
+    };
+
+    if (typeof rawReq.on === "function") {
+      rawReq.on("close", onReqClose);
+      rawReq.on("error", onReqError);
+    }
+
+    const abortAll = (err: Error) => {
+      if (aborted) return;
+      aborted = true;
+
+      if (typeof rawReq.removeListener === "function") {
+        rawReq.removeListener("close", onReqClose);
+        rawReq.removeListener("error", onReqError);
+      }
+
+      try {
+        rawReq.unpipe(bb);
+        if (typeof rawReq.destroy === "function") {
+          rawReq.destroy();
+        }
+      } catch {}
+
+      for (const ws of activeStreams) {
+        try {
+          ws.destroy();
+        } catch {}
+      }
+      activeStreams.clear();
+
+      cleanupTempFiles(tempFilesToCleanup);
+      reject(err);
+    };
+
+    bb.on("filesLimit", () => {
+      abortAll(new AppError(ErrorCode.PAYLOAD_TOO_LARGE, "Exceeded maximum allowed files limit (20)"));
+    });
+
+    bb.on("fieldsLimit", () => {
+      abortAll(new AppError(ErrorCode.PAYLOAD_TOO_LARGE, "Exceeded maximum allowed fields limit (100)"));
+    });
+
+    bb.on("partsLimit", () => {
+      abortAll(new AppError(ErrorCode.PAYLOAD_TOO_LARGE, "Exceeded maximum allowed parts limit (150)"));
+    });
+
     bb.on("field", (name, val) => {
+      if (aborted || FORBIDDEN_KEYS.has(name)) return;
+
+      const fieldBytes = Buffer.byteLength(name) + Buffer.byteLength(val);
+      totalBytesRead += fieldBytes;
+
+      if (totalBytesRead > maxTotal) {
+        abortAll(
+          new AppError(
+            ErrorCode.PAYLOAD_TOO_LARGE,
+            `Total multipart payload size exceeds maximum limit of ${maxTotal} bytes`,
+          ),
+        );
+        return;
+      }
+
       const existing = fields[name];
       if (existing === undefined) {
         fields[name] = val;
@@ -64,48 +156,68 @@ export async function parseMultipartStream(
     });
 
     bb.on("file", (fieldname, fileStream, info) => {
-      const { filename, mimeType } = info;
-      const detectedMime = mimeType && mimeType !== "application/octet-stream"
-        ? mimeType
-        : (mime.lookup(filename) || "application/octet-stream");
+      if (aborted || FORBIDDEN_KEYS.has(fieldname)) {
+        fileStream.resume();
+        return;
+      }
 
-      const uniqueName = `${createId()}-${path.basename(filename)}`;
+      const { filename, mimeType } = info;
+      const rawFilename = typeof filename === "string" && filename ? filename : "file";
+      const cleanFilename = path.basename(rawFilename).replace(/[\x00-\x1f\x7f/\\]/g, "_");
+      const detectedMime =
+        mimeType && mimeType !== "application/octet-stream"
+          ? mimeType
+          : (mime.lookup(cleanFilename) || "application/octet-stream");
+
+      const uniqueName = `${createId()}-${cleanFilename || "file"}`;
       const savePath = path.join(tmpDir, uniqueName);
       tempFilesToCleanup.push(savePath);
 
       const writeStream = fs.createWriteStream(savePath);
+      activeStreams.add(writeStream);
+
+      const cleanupStream = () => {
+        activeStreams.delete(writeStream);
+      };
+
+      writeStream.on("finish", cleanupStream);
+      writeStream.on("error", cleanupStream);
+      writeStream.on("close", cleanupStream);
+
       let fileByteLength = 0;
 
       const filePromise = new Promise<void>((resFile, rejFile) => {
         fileStream.on("data", (chunk: Buffer) => {
+          if (aborted) return;
           fileByteLength += chunk.length;
           totalBytesRead += chunk.length;
 
           if (totalBytesRead > maxTotal) {
             fileStream.unpipe();
             writeStream.destroy();
-            rejFile(
-              new AppError(
-                ErrorCode.PAYLOAD_TOO_LARGE,
-                `Total multipart payload size exceeds maximum limit of ${maxTotal} bytes`,
-              ),
+            const err = new AppError(
+              ErrorCode.PAYLOAD_TOO_LARGE,
+              `Total multipart payload size exceeds maximum limit of ${maxTotal} bytes`,
             );
+            rejFile(err);
+            abortAll(err);
           }
         });
 
         fileStream.on("limit", () => {
           writeStream.destroy();
-          rejFile(
-            new AppError(
-              ErrorCode.PAYLOAD_TOO_LARGE,
-              `File "${filename}" exceeds single file size limit of ${maxFile} bytes`,
-            ),
+          const err = new AppError(
+            ErrorCode.PAYLOAD_TOO_LARGE,
+            `File "${filename}" exceeds single file size limit of ${maxFile} bytes`,
           );
+          rejFile(err);
+          abortAll(err);
         });
 
         fileStream.pipe(writeStream);
 
         writeStream.on("finish", () => {
+          if (aborted) return;
           const uploaded = new UploadedFile({
             path: savePath,
             filename,
@@ -124,25 +236,37 @@ export async function parseMultipartStream(
           resFile();
         });
 
-        writeStream.on("error", (err) => rejFile(err));
-        fileStream.on("error", (err) => rejFile(err));
+        writeStream.on("error", (err) => {
+          rejFile(err);
+          abortAll(err);
+        });
+        fileStream.on("error", (err) => {
+          rejFile(err);
+          abortAll(err);
+        });
       });
 
+      filePromise.catch(() => {});
       filePromises.push(filePromise);
     });
 
     bb.on("error", (err) => {
-      cleanupTempFiles(tempFilesToCleanup);
-      reject(new AppError(ErrorCode.INVALID_BODY, `Multipart parsing error: ${(err as Error).message}`));
+      abortAll(new AppError(ErrorCode.INVALID_BODY, `Multipart parsing error: ${(err as Error).message}`));
     });
 
     bb.on("finish", async () => {
+      if (aborted) return;
       try {
         await Promise.all(filePromises);
-        resolve({ fields, files, tempFilesToCleanup });
+        if (!aborted) {
+          if (typeof rawReq.removeListener === "function") {
+            rawReq.removeListener("close", onReqClose);
+            rawReq.removeListener("error", onReqError);
+          }
+          resolve({ fields, files, tempFilesToCleanup });
+        }
       } catch (err) {
-        cleanupTempFiles(tempFilesToCleanup);
-        reject(err);
+        abortAll(err as Error);
       }
     });
 
@@ -150,14 +274,16 @@ export async function parseMultipartStream(
   });
 }
 
-export function cleanupTempFiles(paths: string[]): void {
-  for (const p of paths) {
-    try {
-      if (fs.existsSync(p)) {
-        fs.unlinkSync(p);
-      }
-    } catch {}
-  }
+export function cleanupTempFiles(paths: string[]): Promise<void> | void {
+  if (!paths || paths.length === 0) return;
+  const p = Promise.allSettled(
+    paths.map(async (filePath) => {
+      try {
+        await fs.promises.unlink(filePath);
+      } catch {}
+    }),
+  );
+  void p;
 }
 
 export function normalizeMultipartPayload(
@@ -165,29 +291,27 @@ export function normalizeMultipartPayload(
 ): ParsedMultipartRpcPayload {
   const { fields, files, tempFilesToCleanup } = result;
 
-  const namespace = fields.namespace;
-  const functionName = fields.functionName;
-
-  if (typeof namespace !== "string" || !namespace.trim()) {
+  let namespace: string;
+  let functionName: string;
+  try {
+    namespace = validateRoutingIdentifier(fields.namespace, "namespace", "multipart payload");
+    functionName = validateRoutingIdentifier(fields.functionName, "functionName", "multipart payload");
+  } catch (err) {
     cleanupTempFiles(tempFilesToCleanup);
-    throw new AppError(
-      ErrorCode.INVALID_BODY,
-      'Missing or invalid "namespace" form field in multipart payload',
-    );
+    throw err;
   }
 
-  if (typeof functionName !== "string" || !functionName.trim()) {
-    cleanupTempFiles(tempFilesToCleanup);
-    throw new AppError(
-      ErrorCode.INVALID_BODY,
-      'Missing or invalid "functionName" form field in multipart payload',
-    );
-  }
-
-  const data: Record<string, unknown> = {};
+  const data: Record<string, unknown> = Object.create(null);
 
   for (const [key, val] of Object.entries(fields)) {
-    if (key === "namespace" || key === "functionName") continue;
+    if (key === "namespace" || key === "functionName" || FORBIDDEN_KEYS.has(key)) continue;
+
+    const actualKey =
+      key === "_data_namespace"
+        ? "namespace"
+        : key === "_data_functionName"
+        ? "functionName"
+        : key;
 
     if (typeof val === "string") {
       const trimmed = val.trim();
@@ -196,13 +320,13 @@ export function normalizeMultipartPayload(
         (trimmed.startsWith("[") && trimmed.endsWith("]"))
       ) {
         try {
-          data[key] = JSON.parse(val);
+          data[actualKey] = sanitizeParsedJson(JSON.parse(val));
           continue;
         } catch {}
       }
-      data[key] = val;
+      data[actualKey] = val;
     } else if (Array.isArray(val)) {
-      data[key] = val.map((item) => {
+      data[actualKey] = val.map((item) => {
         if (typeof item === "string") {
           const trimmed = item.trim();
           if (
@@ -210,14 +334,14 @@ export function normalizeMultipartPayload(
             (trimmed.startsWith("[") && trimmed.endsWith("]"))
           ) {
             try {
-              return JSON.parse(item);
+              return sanitizeParsedJson(JSON.parse(item));
             } catch {}
           }
         }
         return item;
       });
     } else {
-      data[key] = val;
+      data[actualKey] = val;
     }
   }
 
@@ -225,15 +349,24 @@ export function normalizeMultipartPayload(
   // in an images array) and a file was also uploaded under the same key, combine them
   // into a single mixed array: [string, string, ..., UploadedFile, ...].
   for (const [key, fileVal] of Object.entries(files)) {
-    const existing = data[key];
+    if (FORBIDDEN_KEYS.has(key)) continue;
+
+    const actualKey =
+      key === "_data_namespace"
+        ? "namespace"
+        : key === "_data_functionName"
+        ? "functionName"
+        : key;
+
+    const existing = data[actualKey];
     if (existing === undefined) {
       // No string fields for this key — just use the file(s) directly
-      data[key] = fileVal;
+      data[actualKey] = fileVal;
     } else {
       // String(s) already present — merge into a single array with the file(s)
       const strPart = Array.isArray(existing) ? existing : [existing];
       const filePart = Array.isArray(fileVal) ? fileVal : [fileVal];
-      data[key] = [...strPart, ...filePart];
+      data[actualKey] = [...strPart, ...filePart];
     }
   }
 

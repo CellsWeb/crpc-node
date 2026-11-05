@@ -14,19 +14,22 @@
 import type { Static } from "@sinclair/typebox";
 import { AppError, ErrorCode, type MiddlewareFn } from "@cellsweb/rpc-core";
 import { LRUCache } from "lru-cache";
-import { RateLimiterAbstract, RateLimiterMemory } from "rate-limiter-flexible";
-import { optionsSchema } from "./constants";
+import rateLimiterPkg from "rate-limiter-flexible";
+import type { optionsSchema } from "./constants";
+
+const { RateLimiterMemory } = rateLimiterPkg;
+type RateLimiterInstance = InstanceType<typeof RateLimiterMemory>;
 
 type Options = Static<typeof optionsSchema>;
 
-const limiterCache = new LRUCache<string, RateLimiterAbstract>({
+const limiterCache = new LRUCache<string, RateLimiterInstance>({
   max: 256,
 });
 
 function getOrCreateLimiter(
   windowSeconds: number,
   maxRequests: number,
-): RateLimiterAbstract {
+): RateLimiterInstance {
   const key = `${windowSeconds}:${maxRequests}`;
   let limiter = limiterCache.get(key);
 

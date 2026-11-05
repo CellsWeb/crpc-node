@@ -1,10 +1,6 @@
+import http, { type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { RequestListener } from "node:http";
 import { createId } from "@paralleldrive/cuid2";
-import http, {
-  type IncomingMessage,
-  type RequestListener,
-  type Server,
-  type ServerResponse,
-} from "node:http";
 import type { MiddlewareContext } from "./context";
 import { renderDocsHtml } from "./docs/renderer";
 import { AppError, ErrorCode, isAppError, toAppError } from "./errors";
@@ -22,8 +18,18 @@ import {
   type ExecuteResult,
   type TestCaller,
 } from "./test-caller";
-import { getHighResDurationMs, withTimeout } from "./utils/timing";
-import { validateSchema } from "./utils/typebox";
+import { getHighResDurationMs } from "./utils/timing";
+import { runPipeline } from "./pipeline";
+import { shutdownGlobalWorkerPool } from "./workers/worker-pool";
+
+export interface CorsOptions {
+  origin?: string | string[] | boolean | ((origin: string) => boolean);
+  methods?: string[];
+  allowedHeaders?: string[];
+  exposedHeaders?: string[];
+  credentials?: boolean;
+  maxAge?: number;
+}
 
 export interface CoreRpcOptions {
   functionsDir?: string;
@@ -33,7 +39,51 @@ export interface CoreRpcOptions {
   docs?: boolean;
   rpcEndpoint?: string;
   docsEndpoint?: string;
+  healthEndpoint?: string;
   strict?: boolean;
+  trustProxy?: boolean;
+  cors?: boolean | CorsOptions;
+}
+
+function applyCors(
+  req: IncomingMessage | any,
+  res: ServerResponse | any,
+  corsConfig?: boolean | CorsOptions,
+): void {
+  if (!corsConfig) return;
+
+  const rawReq = req.raw ?? req;
+  const rawRes = res.raw ?? res;
+  if (typeof rawRes.setHeader !== "function") return;
+
+  const originHeader = (rawReq.headers?.origin as string) ?? "";
+  const config: CorsOptions = typeof corsConfig === "object" ? corsConfig : {};
+
+  let allowedOrigin: string | undefined;
+
+  if (typeof config.origin === "function") {
+    if (config.origin(originHeader)) {
+      allowedOrigin = originHeader;
+    }
+  } else if (Array.isArray(config.origin)) {
+    if (config.origin.includes(originHeader)) {
+      allowedOrigin = originHeader;
+    }
+  } else if (typeof config.origin === "string") {
+    allowedOrigin = config.origin;
+  } else if (corsConfig === true || config.origin === true) {
+    allowedOrigin = originHeader || "*";
+  }
+
+  if (allowedOrigin) {
+    rawRes.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+    if (config.credentials || (corsConfig === true && originHeader)) {
+      rawRes.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+  }
+
+  const exposedHeaders = config.exposedHeaders ?? ["X-Request-Id"];
+  rawRes.setHeader("Access-Control-Expose-Headers", exposedHeaders.join(", "));
 }
 
 function normalizeEndpoint(input: string): string {
@@ -54,6 +104,8 @@ export class CoreRPC {
       options.rpcEndpoint ?? process.env.API_RPC_ENDPOINT ?? "/rpc";
     const rawDocs =
       options.docsEndpoint ?? process.env.API_DOCS_ENDPOINT ?? "/docs";
+    const rawHealth =
+      options.healthEndpoint ?? process.env.API_HEALTH_ENDPOINT ?? "/health";
 
     this.options = {
       functionsDir: options.functionsDir ?? "src/functions",
@@ -65,12 +117,20 @@ export class CoreRPC {
       docs: options.docs ?? true,
       rpcEndpoint: normalizeEndpoint(rawRpc),
       docsEndpoint: normalizeEndpoint(rawDocs),
+      healthEndpoint: normalizeEndpoint(rawHealth),
       strict: options.strict ?? process.env.NODE_ENV === "production",
+      trustProxy: options.trustProxy ?? false,
+      cors: options.cors ?? true,
     };
+  }
+
+  private invalidateRegistry(): void {
+    this.registryInstance = undefined;
   }
 
   public useFunctions(dir: string): this {
     this.options.functionsDir = dir;
+    this.invalidateRegistry();
     return this;
   }
 
@@ -80,6 +140,7 @@ export class CoreRPC {
 
   public useMiddlewares(dir: string): this {
     this.options.middlewaresDir = dir;
+    this.invalidateRegistry();
     return this;
   }
 
@@ -99,6 +160,11 @@ export class CoreRPC {
 
   public setDocs(docs: boolean): this {
     this.options.docs = docs;
+    return this;
+  }
+
+  public setTrustProxy(trust: boolean): this {
+    this.options.trustProxy = trust;
     return this;
   }
 
@@ -137,24 +203,55 @@ export class CoreRPC {
     return async (
       req: IncomingMessage | any,
       res: ServerResponse | any,
+      next?: (err?: any) => void,
     ): Promise<void> => {
       const rawReq = req.raw ?? req;
       const rawRes = res.raw ?? res;
-      const url = rawReq.url ?? req.url ?? "/";
+      const rawUrl = rawReq.url ?? req.url ?? "/";
+      const pathname = rawUrl.split("?")[0];
       const method = rawReq.method ?? req.method ?? "GET";
 
       const rpcPath = this.options.rpcEndpoint ?? "/rpc";
       const docsPath = this.options.docsEndpoint ?? "/docs";
+      const healthPath = this.options.healthEndpoint ?? "/health";
 
-      if (method === "POST" && (url === rpcPath || url === `${rpcPath}/`)) {
-        if (req.body !== undefined && rawReq.body === undefined) {
-          rawReq.body = req.body;
+      applyCors(req, res, this.options.cors);
+
+      if (method === "OPTIONS") {
+        rawRes.statusCode = 204;
+        if (typeof rawRes.setHeader === "function") {
+          const methods =
+            typeof this.options.cors === "object" && this.options.cors.methods
+              ? this.options.cors.methods.join(", ")
+              : "POST, GET, OPTIONS";
+          const allowedHeaders =
+            typeof this.options.cors === "object" && this.options.cors.allowedHeaders
+              ? this.options.cors.allowedHeaders.join(", ")
+              : "Content-Type, Authorization, X-Request-Id, *";
+          const maxAge =
+            typeof this.options.cors === "object" && this.options.cors.maxAge !== undefined
+              ? String(this.options.cors.maxAge)
+              : "86400";
+
+          rawRes.setHeader("Access-Control-Allow-Methods", methods);
+          rawRes.setHeader("Access-Control-Allow-Headers", allowedHeaders);
+          rawRes.setHeader("Access-Control-Max-Age", maxAge);
         }
-        await handleApiRequest(req, res, registry);
+        rawRes.end();
         return;
       }
 
-      if (method === "GET" && (url === "/health" || url === "/health/")) {
+      if (method === "POST" && (pathname === rpcPath || pathname === `${rpcPath}/`)) {
+        if (req.body !== undefined && rawReq.body === undefined) {
+          rawReq.body = req.body;
+        }
+        await handleApiRequest(req, res, registry, {
+          trustProxy: this.options.trustProxy,
+        });
+        return;
+      }
+
+      if (method === "GET" && (pathname === healthPath || pathname === `${healthPath}/`)) {
         rawRes.statusCode = 200;
         if (typeof rawRes.setHeader === "function") {
           rawRes.setHeader("Content-Type", "application/json");
@@ -168,9 +265,9 @@ export class CoreRPC {
       if (
         this.options.docs &&
         method === "GET" &&
-        (url === docsPath ||
-          url === `${docsPath}/` ||
-          url.startsWith(`${docsPath}/`))
+        (pathname === docsPath ||
+          pathname === `${docsPath}/` ||
+          pathname.startsWith(`${docsPath}/`))
       ) {
         const host =
           req.headers?.host ??
@@ -179,7 +276,7 @@ export class CoreRPC {
         const socket = req.socket ?? rawReq.socket;
         const protocol = socket?.encrypted ? "https" : "http";
         const serverUrl = `${protocol}://${host}`;
-        const html = renderDocsHtml(registry, serverUrl, url, rpcPath);
+        const html = renderDocsHtml(registry, serverUrl, rawUrl, rpcPath, docsPath);
 
         rawRes.statusCode = 200;
         if (typeof rawRes.setHeader === "function") {
@@ -187,6 +284,10 @@ export class CoreRPC {
         }
         rawRes.end(html);
         return;
+      }
+
+      if (typeof next === "function") {
+        return next();
       }
 
       rawRes.statusCode = 404;
@@ -197,7 +298,7 @@ export class CoreRPC {
         JSON.stringify({
           status: "error",
           code: "not_found",
-          message: `Cannot ${method} ${url}`,
+          message: `Cannot ${method} ${rawUrl}`,
         }),
       );
     };
@@ -223,9 +324,9 @@ export class CoreRPC {
         );
       }
 
-      const headers = options.headers ?? {};
+      const headers = (options.headers ?? {}) as Record<string, unknown>;
 
-      let currentContext: MiddlewareContext = {
+      const context: MiddlewareContext = {
         requestId,
         ip: (options.contextOverrides?.ip as string) ?? "127.0.0.1",
         namespace: fnEntry.namespace,
@@ -235,103 +336,21 @@ export class CoreRPC {
         ...(options.contextOverrides ?? {}),
       };
 
-      for (const mwConfig of fnEntry.middlewares) {
-        const mwEntry = registry.middlewares.get(mwConfig.name);
-        if (!mwEntry) {
-          logSystemError(
-            `Middleware "${mwConfig.name}" declared on ${key} but not found in registry.`,
-          );
-          continue;
-        }
-
-        if (mwEntry.headersSchema) {
-          validateSchema(
-            mwEntry.headersSchema,
-            headers,
-            `Middleware headers for "${mwConfig.name}"`,
-          );
-        }
-
-        const mwOptions = mwConfig.options ?? {};
-        if (mwEntry.optionsSchema) {
-          validateSchema(
-            mwEntry.optionsSchema,
-            mwOptions,
-            `Middleware options for "${mwConfig.name}"`,
-          );
-        }
-
-        const mwResult = await mwEntry.run(
-          {
-            headers: headers as Record<string, unknown>,
-            options: mwOptions,
-            function: {
-              key,
-              namespace: fnEntry.namespace,
-              functionName: fnEntry.functionName,
-              metadata: fnEntry.metadata,
-              contentType: fnEntry.contentType,
-            },
-          },
-          currentContext,
-        );
-
-        if (mwResult && typeof mwResult === "object") {
-          currentContext = mwResult as MiddlewareContext;
-        }
-      }
-
-      if (fnEntry.headersSchema) {
-        validateSchema(fnEntry.headersSchema, headers, `Headers for "${key}"`);
-      }
-
-      const validatedInput = fnEntry.inputSchema
-        ? validateSchema(fnEntry.inputSchema, data, `Input for "${key}"`)
-        : data;
-
-      const timeoutMs =
-        options.timeoutMs ??
-        (process.env.API_REQUEST_TIMEOUT_MS
-          ? Number(process.env.API_REQUEST_TIMEOUT_MS)
-          : 30000);
-
-      const rawResult = await withTimeout(
-        fnEntry.run(validatedInput, currentContext),
-        timeoutMs,
-        `Function ${key}`,
-      );
-
-      let validatedOutput = rawResult;
-      if (fnEntry.outputSchema) {
-        try {
-          validatedOutput = validateSchema(
-            fnEntry.outputSchema,
-            rawResult,
-            `Output for "${key}"`,
-          );
-        } catch (schemaErr) {
-          logSystemError(
-            `Output schema mismatch — bug in run.ts for function ${key}`,
-            schemaErr,
-          );
-          throw new AppError(
-            ErrorCode.SCHEMA_MISMATCH,
-            "Response schema mismatch — check function run.ts output.",
-            isAppError(schemaErr) ? schemaErr.details : undefined,
-            false,
-          );
-        }
-      }
-
-      const durationMs = getHighResDurationMs(startTime);
-      logRequestSuccess(requestId, key, durationMs);
+      const result = await runPipeline<T>({
+        key,
+        data,
+        headers,
+        context,
+        registry,
+        timeoutMs: options.timeoutMs,
+      });
 
       return {
         status: "ok",
-        data: validatedOutput as T,
+        data: result.data,
         meta: {
           requestId,
-          durationMs,
+          durationMs: result.durationMs,
         },
       };
     } catch (err) {
@@ -367,7 +386,11 @@ export class CoreRPC {
   }
 
   public createFastifyPlugin(
-    pluginOptions: { rpcEndpoint?: string; docsEndpoint?: string } = {},
+    pluginOptions: {
+      rpcEndpoint?: string;
+      docsEndpoint?: string;
+      healthEndpoint?: string;
+    } = {},
   ) {
     return async (
       fastify: any,
@@ -379,6 +402,9 @@ export class CoreRPC {
       );
       const docsPath = normalizeEndpoint(
         pluginOptions.docsEndpoint ?? this.options.docsEndpoint ?? "/docs",
+      );
+      const healthPath = normalizeEndpoint(
+        pluginOptions.healthEndpoint ?? this.options.healthEndpoint ?? "/health",
       );
 
       const routeHandler = async (req: any, reply: any) => {
@@ -392,11 +418,11 @@ export class CoreRPC {
       fastify.all(rpcPath, routeHandler);
       fastify.all(`${rpcPath}/`, routeHandler);
 
-      fastify.get("/health", async (req: any, reply: any) => {
+      fastify.get(healthPath, async (req: any, reply: any) => {
         reply.hijack();
         await handler(req.raw, reply.raw);
       });
-      fastify.get("/health/", async (req: any, reply: any) => {
+      fastify.get(`${healthPath}/`, async (req: any, reply: any) => {
         reply.hijack();
         await handler(req.raw, reply.raw);
       });
@@ -415,7 +441,11 @@ export class CoreRPC {
   }
 
   public fastifyPlugin(
-    pluginOptions: { rpcEndpoint?: string; docsEndpoint?: string } = {},
+    pluginOptions: {
+      rpcEndpoint?: string;
+      docsEndpoint?: string;
+      healthEndpoint?: string;
+    } = {},
   ) {
     return this.createFastifyPlugin(pluginOptions);
   }
@@ -431,8 +461,10 @@ export class CoreRPC {
     const handler = await this.createHandler();
     this.serverInstance = http.createServer(handler);
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      this.serverInstance!.once("error", reject);
       this.serverInstance!.listen(port, host, () => {
+        this.serverInstance!.removeListener("error", reject);
         logger.info(`Server listening at http://${host}:${port}`);
         resolve(this.serverInstance!);
       });
@@ -443,6 +475,22 @@ export class CoreRPC {
     return this.start(overridePort);
   }
 
+  public async close(): Promise<void> {
+    await shutdownGlobalWorkerPool();
+    if (this.serverInstance) {
+      if (typeof (this.serverInstance as any).closeIdleConnections === "function") {
+        (this.serverInstance as any).closeIdleConnections();
+      }
+      await new Promise<void>((resolve, reject) => {
+        this.serverInstance!.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      this.serverInstance = undefined;
+    }
+  }
+
   public static configure(options?: CoreRpcOptions): CoreRPC {
     return new CoreRPC(options);
   }
@@ -450,7 +498,11 @@ export class CoreRPC {
 
 export function createFastifyPlugin(
   app: CoreRPC,
-  options?: { rpcEndpoint?: string; docsEndpoint?: string },
+  options?: {
+    rpcEndpoint?: string;
+    docsEndpoint?: string;
+    healthEndpoint?: string;
+  },
 ) {
   return app.createFastifyPlugin(options);
 }

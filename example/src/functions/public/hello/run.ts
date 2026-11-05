@@ -6,7 +6,7 @@
 
 import type { Static } from "@sinclair/typebox";
 import type { MiddlewareContext } from "@cellsweb/rpc-core";
-import { inputSchema, outputSchema } from "./constants";
+import type { inputSchema, outputSchema } from "./constants";
 
 type Input = Static<typeof inputSchema>;
 type Output = Static<typeof outputSchema>;

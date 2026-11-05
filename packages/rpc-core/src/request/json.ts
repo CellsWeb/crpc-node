@@ -1,121 +1,68 @@
 import type { IncomingMessage } from "node:http";
 import { AppError, ErrorCode } from "../errors";
 import { safeJsonParse } from "../utils/json";
+import { validateRoutingIdentifier } from "./routing";
 
 export interface ParsedJsonRpcPayload {
   readonly namespace: string;
   readonly functionName: string;
-  readonly data: Record<string, unknown>;
+  readonly data: unknown;
+}
+
+function ensureValidJsonObject(parsed: unknown): asserts parsed is Record<string, unknown> {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new AppError(
+      ErrorCode.INVALID_BODY,
+      "Expected a top-level JSON object with namespace and functionName",
+    );
+  }
+}
+
+function extractRpcFields(obj: Record<string, unknown>): ParsedJsonRpcPayload {
+  const namespace = validateRoutingIdentifier(obj.namespace, "namespace");
+  const functionName = validateRoutingIdentifier(obj.functionName, "functionName");
+  const data = obj.data !== undefined ? obj.data : {};
+  return { namespace, functionName, data };
 }
 
 export async function parseJsonRequest(
   req: IncomingMessage | any,
   maxBytes?: number,
 ): Promise<ParsedJsonRpcPayload> {
-  // ── 1. Check if framework (Fastify / Express) already parsed the body ──
+  // ── 1. Check if framework (Fastify / Express) already parsed or captured the body ──
   const preParsed =
-    req.body ??
-    (req as any).rawBody ??
-    (req.raw && (req.raw as any).body) ??
-    (req.raw && (req.raw as any).rawBody);
+    req.body !== undefined
+      ? req.body
+      : (req as any).rawBody !== undefined
+      ? (req as any).rawBody
+      : req.raw && (req.raw as any).body !== undefined
+      ? (req.raw as any).body
+      : req.raw && (req.raw as any).rawBody !== undefined
+      ? (req.raw as any).rawBody
+      : undefined;
 
-  if (preParsed && typeof preParsed === "object" && !Buffer.isBuffer(preParsed)) {
-    const namespace = preParsed.namespace;
-    const functionName = preParsed.functionName;
-
-    if (typeof namespace !== "string" || !namespace.trim()) {
-      throw new AppError(
-        ErrorCode.INVALID_BODY,
-        'Missing or invalid "namespace" field in JSON body',
-      );
+  if (preParsed !== undefined) {
+    if (typeof preParsed === "string") {
+      if (!preParsed.trim()) {
+        throw new AppError(ErrorCode.INVALID_BODY, "Request body is empty");
+      }
+      const parsed = safeJsonParse(preParsed);
+      ensureValidJsonObject(parsed);
+      return extractRpcFields(parsed);
     }
 
-    if (typeof functionName !== "string" || !functionName.trim()) {
-      throw new AppError(
-        ErrorCode.INVALID_BODY,
-        'Missing or invalid "functionName" field in JSON body',
-      );
+    if (Buffer.isBuffer(preParsed)) {
+      const rawText = preParsed.toString("utf-8");
+      if (!rawText.trim()) {
+        throw new AppError(ErrorCode.INVALID_BODY, "Request body is empty");
+      }
+      const parsed = safeJsonParse(rawText);
+      ensureValidJsonObject(parsed);
+      return extractRpcFields(parsed);
     }
 
-    const data =
-      typeof preParsed.data === "object" && preParsed.data !== null
-        ? (preParsed.data as Record<string, unknown>)
-        : {};
-
-    return {
-      namespace: namespace.trim(),
-      functionName: functionName.trim(),
-      data,
-    };
-  }
-
-  // ── 2. If preParsed is string (e.g. raw string body) ──
-  if (typeof preParsed === "string" && preParsed.trim().length > 0) {
-    const parsed = safeJsonParse<Record<string, unknown>>(preParsed);
-    const namespace = parsed.namespace;
-    const functionName = parsed.functionName;
-
-    if (typeof namespace !== "string" || !namespace.trim()) {
-      throw new AppError(
-        ErrorCode.INVALID_BODY,
-        'Missing or invalid "namespace" field in JSON body',
-      );
-    }
-
-    if (typeof functionName !== "string" || !functionName.trim()) {
-      throw new AppError(
-        ErrorCode.INVALID_BODY,
-        'Missing or invalid "functionName" field in JSON body',
-      );
-    }
-
-    const data =
-      typeof parsed.data === "object" && parsed.data !== null
-        ? (parsed.data as Record<string, unknown>)
-        : {};
-
-    return {
-      namespace: namespace.trim(),
-      functionName: functionName.trim(),
-      data,
-    };
-  }
-
-  // ── 3. If preParsed is Buffer ──
-  if (Buffer.isBuffer(preParsed)) {
-    const rawText = preParsed.toString("utf-8");
-    if (!rawText.trim()) {
-      throw new AppError(ErrorCode.INVALID_BODY, "Request body is empty");
-    }
-
-    const parsed = safeJsonParse<Record<string, unknown>>(rawText);
-    const namespace = parsed.namespace;
-    const functionName = parsed.functionName;
-
-    if (typeof namespace !== "string" || !namespace.trim()) {
-      throw new AppError(
-        ErrorCode.INVALID_BODY,
-        'Missing or invalid "namespace" field in JSON body',
-      );
-    }
-
-    if (typeof functionName !== "string" || !functionName.trim()) {
-      throw new AppError(
-        ErrorCode.INVALID_BODY,
-        'Missing or invalid "functionName" field in JSON body',
-      );
-    }
-
-    const data =
-      typeof parsed.data === "object" && parsed.data !== null
-        ? (parsed.data as Record<string, unknown>)
-        : {};
-
-    return {
-      namespace: namespace.trim(),
-      functionName: functionName.trim(),
-      data,
-    };
+    ensureValidJsonObject(preParsed);
+    return extractRpcFields(preParsed);
   }
 
   // ── 4. Fallback: Stream consumer for native node:http ──
@@ -134,6 +81,11 @@ export async function parseJsonRequest(
     totalBytes += buf.length;
 
     if (totalBytes > limit) {
+      try {
+        if (typeof rawStream.destroy === "function") {
+          rawStream.destroy();
+        }
+      } catch {}
       throw new AppError(
         ErrorCode.PAYLOAD_TOO_LARGE,
         `JSON request payload exceeds max allowed limit of ${limit} bytes`,
@@ -147,33 +99,7 @@ export async function parseJsonRequest(
     throw new AppError(ErrorCode.INVALID_BODY, "Request body is empty");
   }
 
-  const parsed = safeJsonParse<Record<string, unknown>>(rawText);
-
-  const namespace = parsed.namespace;
-  const functionName = parsed.functionName;
-
-  if (typeof namespace !== "string" || !namespace.trim()) {
-    throw new AppError(
-      ErrorCode.INVALID_BODY,
-      'Missing or invalid "namespace" field in JSON body',
-    );
-  }
-
-  if (typeof functionName !== "string" || !functionName.trim()) {
-    throw new AppError(
-      ErrorCode.INVALID_BODY,
-      'Missing or invalid "functionName" field in JSON body',
-    );
-  }
-
-  const data =
-    typeof parsed.data === "object" && parsed.data !== null
-      ? (parsed.data as Record<string, unknown>)
-      : {};
-
-  return {
-    namespace: namespace.trim(),
-    functionName: functionName.trim(),
-    data,
-  };
+  const parsed = safeJsonParse(rawText);
+  ensureValidJsonObject(parsed);
+  return extractRpcFields(parsed);
 }

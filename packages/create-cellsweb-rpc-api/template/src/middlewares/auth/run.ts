@@ -13,7 +13,7 @@
 
 import type { Static } from "@sinclair/typebox";
 import { AppError, ErrorCode, type MiddlewareFn } from "@cellsweb/rpc-core";
-import { optionsSchema, outputSchema, type UserRole } from "./constants";
+import type { optionsSchema, outputSchema, UserRole } from "./constants";
 
 export type AuthOptions = Static<typeof optionsSchema>;
 export type AuthContext = Static<typeof outputSchema>;
@@ -38,8 +38,8 @@ export const run: MiddlewareFn<AuthOptions, { auth?: AuthContext }> = async (
     (Array.isArray(headers["token"]) ? headers["token"][0] : headers["token"]);
 
   const token = (typeof authHeader === "string" ? authHeader : "")?.replace(/^Bearer\s+/i, "") ?? undefined;
-  const roles = options.roles ?? [];
-  const isRolesEmpty = roles.length === 0;
+  const roles = options.roles;
+  const isOptional = options.optional === true || (Array.isArray(roles) && roles.length === 0);
 
   let user: IUser | null = null;
   try {
@@ -49,13 +49,15 @@ export const run: MiddlewareFn<AuthOptions, { auth?: AuthContext }> = async (
     throw new AppError(ErrorCode.UNAUTHORIZED, "Invalid or expired token");
   }
 
-  if (!isRolesEmpty) {
-    if (!user) {
-      throw new AppError(ErrorCode.UNAUTHORIZED, "Authentication required");
+  if (!user) {
+    if (isOptional) {
+      return context;
     }
-    if (!roles.includes(user.role)) {
-      throw new AppError(ErrorCode.FORBIDDEN, "Insufficient permissions");
-    }
+    throw new AppError(ErrorCode.UNAUTHORIZED, "Authentication required");
+  }
+
+  if (roles && roles.length > 0 && !roles.includes(user.role)) {
+    throw new AppError(ErrorCode.FORBIDDEN, "Insufficient permissions");
   }
 
   if (user) {

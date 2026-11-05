@@ -167,6 +167,9 @@ function AvatarUploader() {
 
 - **Automatic Multipart Form-Data Conversion**: Pass any JavaScript object with embedded Web `File`/`Blob` or React Native `{ uri, name, type }` objects. `@cellsweb/rpc-client` automatically builds `FormData` and posts seamlessly!
 - **Header & Body Merging**: Configure `defaultHeaders` and `defaultBody` globally or dynamically per request.
+- **Race Condition Prevention**: `useRpcQuery` utilizes monotonic execution counters to guarantee outdated out-of-order responses never overwrite fresh state.
+- **AbortSignal & Timeout Coordination**: Clean cancellation via `signal` with distinct `timeout` (status 408) and `aborted` error codes, with zero memory listener leaks.
+- **Payload Shape Preservation**: Transmits arrays, primitives, and objects in their authentic shapes without unwanted spreading.
 - **Typed Error Handling**: Catches server RPC error responses and throws `RpcError` with `code`, `message`, `status`, and `meta`.
 - **Zero Overhead**: Focused exclusively on clean, high-performance RPC API dispatching.
 

@@ -52,8 +52,8 @@ describe("multipart utilities", () => {
 
   it("hasMultipartData auto-detects files in flat or nested objects/arrays", () => {
     const jsonPayload = {
-      name: "Iqbal Parts",
-      sku: "PART-12345",
+      name: "Widget Pro",
+      sku: "WIDGET-12345",
       price: 150.5,
       active: true,
     };

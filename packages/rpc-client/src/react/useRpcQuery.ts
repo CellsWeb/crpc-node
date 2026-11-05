@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpcClient } from "./context";
 import type { RpcRequestOptions } from "../types";
 
-export interface UseRpcQueryOptions<TData = unknown, TVariables = Record<string, unknown>>
+export interface UseRpcQueryOptions<TData = unknown, TVariables = unknown>
   extends RpcRequestOptions<TVariables> {
   enabled?: boolean;
   onSuccess?: (data: TData) => void;
@@ -30,7 +30,7 @@ function safeSerialize(val: unknown): string {
   }
 }
 
-export function useRpcQuery<TData = unknown, TVariables = Record<string, unknown>>(
+export function useRpcQuery<TData = unknown, TVariables = unknown>(
   options: UseRpcQueryOptions<TData, TVariables>,
 ) {
   const client = useRpcClient();
@@ -55,8 +55,16 @@ export function useRpcQuery<TData = unknown, TVariables = Record<string, unknown
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<TData | undefined>(undefined);
 
+  const queryIdRef = useRef(0);
+  const activeAbortControllerRef = useRef<AbortController | null>(null);
+
   const execute = useCallback(
-    async (overrideData?: TVariables, overrideHeaders?: Record<string, string>) => {
+    async (
+      overrideData?: TVariables,
+      overrideHeaders?: Record<string, string>,
+      overrideSignal?: AbortSignal,
+    ) => {
+      const queryId = ++queryIdRef.current;
       setLoading(true);
       setError(null);
       try {
@@ -67,17 +75,25 @@ export function useRpcQuery<TData = unknown, TVariables = Record<string, unknown
           headers: overrideHeaders ? { ...headers, ...overrideHeaders } : headers,
           multipart,
           timeoutMs,
-          signal,
+          signal: overrideSignal ?? signal,
         });
-        setResult(res);
-        onSuccess?.(res);
+
+        // Prevent race condition: ignore stale response if a newer query dispatched
+        if (queryId === queryIdRef.current) {
+          setResult(res);
+          onSuccess?.(res);
+        }
         return res;
       } catch (err: unknown) {
-        setError(err);
-        onError?.(err);
+        if (queryId === queryIdRef.current) {
+          setError(err);
+          onError?.(err);
+        }
         throw err;
       } finally {
-        setLoading(false);
+        if (queryId === queryIdRef.current) {
+          setLoading(false);
+        }
       }
     },
     [client, namespace, functionName, serializedData, serializedHeaders, multipart, timeoutMs, signal, onSuccess, onError],
@@ -85,8 +101,16 @@ export function useRpcQuery<TData = unknown, TVariables = Record<string, unknown
 
   useEffect(() => {
     if (!enabled) return;
-    execute().catch(() => {});
-  }, [enabled, namespace, functionName, serializedData]);
+
+    const abortController = new AbortController();
+    activeAbortControllerRef.current = abortController;
+
+    execute(undefined, undefined, signal ?? abortController.signal).catch(() => {});
+
+    return () => {
+      abortController.abort();
+    };
+  }, [enabled, namespace, functionName, serializedData, serializedHeaders, execute, signal]);
 
   return {
     data: result,

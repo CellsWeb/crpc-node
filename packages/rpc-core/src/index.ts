@@ -4,7 +4,18 @@ export {
   type InferContext,
   type MiddlewareContext,
 } from "./context";
-export { CoreRPC, createFastifyPlugin, type CoreRpcOptions } from "./core-rpc";
+export {
+  CoreRPC,
+  createFastifyPlugin,
+  type CoreRpcOptions,
+  type CorsOptions,
+} from "./core-rpc";
+export {
+  runPipeline,
+  type PipelineResult,
+  type PipelineSuccessResult,
+  type PipelineErrorResult,
+} from "./pipeline";
 export { renderDocsHtml } from "./docs/renderer";
 export {
   AppError,

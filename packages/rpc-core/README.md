@@ -43,12 +43,15 @@
 
 ## Key Features
 
-- **Zero-Overhead Dispatching**: Raw `node:http` execution loop with $O(1)$ in-memory function Map dispatching.
-- **Strict Content-Type Contract**: Enforces accepted `contentType` (`application/json` or `multipart/form-data`) per function. Mismatches are rejected automatically.
-- **Streaming File Uploads**: `busboy` streams uploaded files directly to temporary disk storage. Temp files are automatically cleaned up in `finally` blocks after request execution.
-- **TypeBox Integration**: End-to-end schema validation and type inference for headers, function inputs, middleware options, and function outputs.
-- **Options-Based Middlewares**: Central middlewares run declaratively per function with isolated options. Middlewares never touch function payload body data or files.
-- **Interactive Documentation**: Auto-renders a dark-mode interactive API documentation UI at `/docs`.
+- **Zero-Overhead $O(1)$ Dispatching**: Raw `node:http` execution loop with $O(1)$ pre-indexed Map dispatching (`namespace.functionName`).
+- **JIT TurboFan Schema Validation**: TypeBox runtime validation compiled to sub-microsecond machine instructions via `TypeCompiler.Compile()` with `WeakMap` schema caching (<0.8µs validation speed).
+- **Declarative Worker Thread Pool**: Run CPU-heavy tasks off-thread with zero ceremony by declaring `export const worker = true;` in your function's `constants.ts`.
+- **Fail-Closed Security Pipeline**: Strict fail-closed boundary enforcement; requests without registered middlewares immediately terminate (`INTERNAL_ERROR`), repelling path traversal, null-byte injection, and prototype pollution.
+- **In-Process Testing Engine**: Execute end-to-end integration and security audit tests with zero network port binding via `createTestCaller(app)` and `app.execute()`.
+- **Streaming File Uploads**: `busboy` streaming parser bounded by strict stream limits, automatic stream unpiping, temp file cleanup in `finally`, and custom TypeBox `File()` / `Files()` primitives.
+- **Built-In Zero-Config CORS & Preflight**: Automated `OPTIONS` preflight handling and customizable cross-origin resource sharing.
+- **Framework-Agnostic Adapters**: Seamless native execution directly on `node:http`, as a Fastify plugin (`app.fastifyPlugin()`), or inside Express route handlers.
+- **Interactive Documentation**: Auto-renders a dark-mode interactive API documentation UI at `/docs` with zero third-party UI dependencies.
 
 ---
 
@@ -522,6 +525,46 @@ export const middlewares = defineMiddlewares([
   { name: "tenantGuard", options: { allowGlobal: false } },
   { name: "rateLimit", options: { windowSeconds: 60, maxRequests: 100 } },
 ]);
+```
+
+---
+
+## Declarative Worker Threads (`worker = true`)
+
+CPU-heavy workloads (image manipulation, PDF generation, cryptography, machine learning inference) can block Node's single-threaded event loop. With CellsWeb RPC, execute any function off-thread in a dedicated worker pool simply by adding `export const worker = true;` to its `constants.ts`:
+
+```ts
+// src/functions/analytics/generateReport/constants.ts
+export const worker = true;
+```
+
+`CoreRPC` automatically routes tasks to a pre-warmed worker thread pool, marshaling input and context, executing off-thread, and returning validated results safely without blocking concurrent I/O.
+
+---
+
+## Direct In-Process Testing (`createTestCaller`)
+
+Write fast, comprehensive integration tests with zero network port binding, full TypeScript inference, and access to raw RPC envelopes:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { CoreRPC, createTestCaller } from "@cellsweb/rpc-core";
+
+const app = new CoreRPC({ functionsDir: "./src/functions" });
+const caller = createTestCaller(app);
+
+describe("RPC Integration Tests", () => {
+  it("executes handler with type safety", async () => {
+    // 1. caller.call unwraps data or throws AppError
+    const user = await caller.call<{ id: string }>("public.getUser", { userId: "usr_123" });
+    expect(user.id).toBe("usr_123");
+
+    // 2. caller.callRaw inspects full response envelope
+    const raw = await caller.callRaw("public.getUser", { userId: "usr_123" });
+    expect(raw.status).toBe("ok");
+    expect(raw.meta.durationMs).toBeGreaterThan(0);
+  });
+});
 ```
 
 ---

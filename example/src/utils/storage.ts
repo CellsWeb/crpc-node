@@ -93,7 +93,12 @@ export const storage = {
     }
 
     try {
-      await fs.promises.unlink(filePathOrKey);
+      const root = path.resolve(process.cwd(), env.UPLOAD_DIR ?? "public/uploads") + path.sep;
+      const resolved = path.resolve(root, filePathOrKey);
+      if (!resolved.startsWith(root) && resolved !== path.resolve(root)) {
+        return false;
+      }
+      await fs.promises.unlink(resolved);
       return true;
     } catch {
       return false;
@@ -104,10 +109,10 @@ export const storage = {
     const mode = env.UPLOAD_MODE ?? "local";
     if (mode !== "local") return null;
 
-    const baseUploadDir = path.resolve(process.cwd(), env.UPLOAD_DIR ?? "public/uploads");
-    const fullPath = path.resolve(baseUploadDir, relativePath);
+    const root = path.resolve(process.cwd(), env.UPLOAD_DIR ?? "public/uploads") + path.sep;
+    const fullPath = path.resolve(root, relativePath);
 
-    if (!fullPath.startsWith(baseUploadDir)) {
+    if (!fullPath.startsWith(root) && fullPath !== path.resolve(root)) {
       return null;
     }
 

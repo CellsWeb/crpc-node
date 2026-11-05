@@ -17,7 +17,7 @@
 
 import type { MiddlewareFn } from "@cellsweb/rpc-core";
 import type { Static } from "@sinclair/typebox";
-import { optionsSchema } from "./constants";
+import type { optionsSchema } from "./constants";
 
 type Options = Static<typeof optionsSchema>;
 

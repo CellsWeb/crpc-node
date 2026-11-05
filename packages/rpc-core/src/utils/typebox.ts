@@ -1,5 +1,6 @@
 import { Type, Kind, TypeRegistry, type TSchema, type TUnsafe, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { TypeCompiler } from "@sinclair/typebox/compiler";
 import { AppError, ErrorCode } from "../errors";
 import { UploadedFile } from "../uploads/types";
 
@@ -239,21 +240,39 @@ export function validateFileField(value: unknown, schema: TSchema, fieldPath: st
   }
 }
 
+function isOptionalSchema(schema: TSchema): boolean {
+  return (schema as any)[Symbol.for("TypeBox.Optional")] === "Optional";
+}
+
 /**
- * Replace File/Files kind nodes in a schema with Type.Optional(Type.Any()) so TypeBox's
- * Value module doesn't try to deeply traverse them. Our validateFileField() handles
- * the actual per-field file validation before we reach the TypeBox Value operations.
+ * Replace File/Files kind nodes in a schema with Type.Any() (or Type.Optional(Type.Any()))
+ * so TypeBox's Value/TypeCompiler module doesn't reject custom symbols. Our validateFileField()
+ * handles the actual per-field file validation before we reach TypeBox operations.
  */
 function sanitizeSchemaForTypebox(schema: TSchema): TSchema {
   if (isFileSchema(schema) || isFilesSchema(schema)) {
-    return Type.Optional(Type.Any());
+    return isOptionalSchema(schema) ? Type.Optional(Type.Any()) : Type.Any();
   }
   if (Array.isArray((schema as any).anyOf)) {
     const variants: TSchema[] = (schema as any).anyOf;
-    if (variants.some((v) => isFileSchema(v) || isFilesSchema(v))) {
-      return Type.Optional(Type.Any());
-    }
-    return schema;
+    const nonFile = variants.filter((v) => !isFileSchema(v) && !isFilesSchema(v));
+    const target =
+      nonFile.length > 0
+        ? Type.Union([...nonFile.map(sanitizeSchemaForTypebox), Type.Any()])
+        : Type.Any();
+    return isOptionalSchema(schema) ? Type.Optional(target) : target;
+  }
+  if (Array.isArray((schema as any).allOf)) {
+    return {
+      ...schema,
+      allOf: (schema as any).allOf.map(sanitizeSchemaForTypebox),
+    } as TSchema;
+  }
+  if (schema.type === "array" && (schema as any).items) {
+    return {
+      ...schema,
+      items: sanitizeSchemaForTypebox((schema as any).items),
+    } as TSchema;
   }
   if (schema.type === "object" && (schema as any).properties) {
     const sanitizedProps: Record<string, TSchema> = {};
@@ -265,44 +284,120 @@ function sanitizeSchemaForTypebox(schema: TSchema): TSchema {
   return schema;
 }
 
+interface CompiledEntry {
+  safeSchema: TSchema;
+  check: {
+    Check: (value: unknown) => boolean;
+    Errors: (value: unknown) => Iterable<{ path: string; message: string; value: unknown }>;
+    Decode: (value: unknown) => unknown;
+  };
+}
+
+const compiledSchemaCache = new WeakMap<TSchema, CompiledEntry>();
+
+function getOrCompileSchema(schema: TSchema): CompiledEntry {
+  let cached = compiledSchemaCache.get(schema);
+  if (cached) return cached;
+
+  const safeSchema = sanitizeSchemaForTypebox(schema);
+  let check: CompiledEntry["check"];
+
+  try {
+    const compiled = TypeCompiler.Compile(safeSchema);
+    check = {
+      Check: (v) => compiled.Check(v),
+      Errors: (v) => compiled.Errors(v),
+      Decode: (v) => compiled.Decode(v),
+    };
+  } catch {
+    check = {
+      Check: (v) => Value.Check(safeSchema, v),
+      Errors: (v) => Value.Errors(safeSchema, v),
+      Decode: (v) => Value.Decode(safeSchema, v),
+    };
+  }
+
+  cached = { safeSchema, check };
+  try {
+    compiledSchemaCache.set(schema, cached);
+  } catch {}
+  return cached;
+}
+
 export function validateSchema<T>(
   schema: TSchema,
   data: unknown,
   contextName = "Payload",
 ): T {
-  // 1. Validate File/Files fields using our own rules (before TypeBox touches them)
-  if (schema.type === "object" && (schema as any).properties) {
+  // Preserve original UploadedFile instances so TypeBox's Value.Default/Value.Clone doesn't strip their prototype methods
+  const fileInstances = new Map<string, UploadedFile | UploadedFile[]>();
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+      if (v instanceof UploadedFile) {
+        fileInstances.set(k, v);
+      } else if (Array.isArray(v) && v.length > 0 && v[0] instanceof UploadedFile) {
+        fileInstances.set(k, v as UploadedFile[]);
+      }
+    }
+  }
+
+  const objData = typeof data === "object" && data !== null && !Array.isArray(data)
+    ? { ...(data as Record<string, unknown>) }
+    : null;
+
+  // 1. Validate File/Files fields using our own rules
+  if (schema.type === "object" && (schema as any).properties && objData !== null) {
     const props = (schema as any).properties as Record<string, TSchema>;
-    const objData = (typeof data === "object" && data !== null) ? (data as Record<string, unknown>) : {};
+    const requiredSet = new Set(
+      Array.isArray((schema as any).required) ? (schema as any).required : [],
+    );
 
     for (const [key, propSchema] of Object.entries(props)) {
+      const isReq = requiredSet.has(key);
+      const val = objData[key];
+
       if (isFileSchema(propSchema) || isFilesSchema(propSchema)) {
-        const val = objData[key];
-        if (val !== undefined) validateFileField(val, propSchema, key);
-      } else if (Array.isArray((propSchema as any).anyOf)) {
-        // Handle Type.Union([Type.String(), File(...)]) — find the File variant
-        const fileVariant = ((propSchema as any).anyOf as TSchema[]).find(
-          (v) => isFileSchema(v) || isFilesSchema(v),
-        );
-        if (fileVariant) {
-          const val = objData[key];
-          // Only validate as file if it actually IS an UploadedFile (not a string URL)
-          if (val !== undefined && val instanceof UploadedFile) {
-            validateFileField(val, fileVariant, key);
+        if (val === undefined || val === null) {
+          if (isReq) {
+            throw new AppError(
+              ErrorCode.VALIDATION_ERROR,
+              `${key}: Expected a file attachment`,
+              [{ path: `/${key}`, message: "Expected a file attachment", value: val }],
+            );
           }
+        } else {
+          let targetVal: unknown = val;
+          if (isFilesSchema(propSchema) && val instanceof UploadedFile) {
+            const arr = [val];
+            targetVal = arr;
+            objData[key] = arr;
+            fileInstances.set(key, arr);
+          }
+          validateFileField(targetVal, propSchema, key);
+        }
+      } else if (Array.isArray((propSchema as any).anyOf)) {
+        const variants: TSchema[] = (propSchema as any).anyOf;
+        const fileVariant = variants.find((v) => isFileSchema(v) || isFilesSchema(v));
+        if (fileVariant && val instanceof UploadedFile) {
+          let targetVal: unknown = val;
+          if (isFilesSchema(fileVariant)) {
+            const arr = [val];
+            targetVal = arr;
+            objData[key] = arr;
+            fileInstances.set(key, arr);
+          }
+          validateFileField(targetVal, fileVariant, key);
         }
       }
     }
   }
 
-  // 2. Replace File/Files schema nodes with Type.Any() before TypeBox Value operations
-  //    so Value.Default / Value.Check / Value.Cast don't throw "Unknown type".
-  const safeSchema = sanitizeSchemaForTypebox(schema);
+  const { safeSchema, check } = getOrCompileSchema(schema);
+  const targetData = objData !== null ? objData : data;
+  const withDefaults = Value.Default(safeSchema, targetData);
 
-  const withDefaults = Value.Default(safeSchema, data);
-
-  if (!Value.Check(safeSchema, withDefaults)) {
-    const errors = [...Value.Errors(safeSchema, withDefaults)];
+  if (!check.Check(withDefaults)) {
+    const errors = [...check.Errors(withDefaults)];
     const details = errors.map((e) => ({
       path: e.path,
       message: e.message,
@@ -316,19 +411,26 @@ export function validateSchema<T>(
     throw new AppError(ErrorCode.VALIDATION_ERROR, firstMsg, details);
   }
 
-  // Value.Decode runs TypeBox Transform decoders (e.g. FormNum, FormBool).
-  // Since Value.Check already passed above, Decode should succeed for normal schemas.
-  // If a FormNum/FormBool constraint check fails inside Decode, it throws a RangeError
-  // (wrapped by TypeBox in TransformDecodeError). Surface it as a validation AppError.
   try {
-    return Value.Decode(safeSchema, withDefaults) as T;
+    const decoded = check.Decode(withDefaults) as T;
+    if (fileInstances.size > 0 && decoded && typeof decoded === "object") {
+      for (const [k, fileVal] of fileInstances.entries()) {
+        if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+        (decoded as Record<string, unknown>)[k] = fileVal;
+      }
+    }
+    return decoded;
   } catch (err: unknown) {
-    // TypeBox wraps decode function errors in TransformDecodeError — extract the inner cause.
-    const inner = err instanceof Error ? ((err as unknown as Record<string, unknown>).error ?? err) : err;
+    const inner =
+      err instanceof Error
+        ? ((err as unknown as Record<string, unknown>).error ?? err)
+        : err;
     if (inner instanceof RangeError) {
       throw new AppError(ErrorCode.VALIDATION_ERROR, inner.message);
     }
-    // No transform found or non-constraint decode failure — fall back to Cast.
-    return Value.Cast(safeSchema, withDefaults) as T;
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      (err as Error).message ?? "Schema decode error",
+    );
   }
 }

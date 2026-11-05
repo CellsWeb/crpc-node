@@ -154,7 +154,7 @@ describe("Framework-Agnostic Request Body Parsing", () => {
   });
 
   describe("parseRpcRequest Framework Detection", () => {
-    it("10. Automatically detects JSON kind when pre-parsed body exists without Content-Type header", async () => {
+    it("10. Rejects pre-parsed body when Content-Type header is missing or unsupported (anti-CSRF)", async () => {
       const req = {
         headers: {},
         body: {
@@ -164,11 +164,7 @@ describe("Framework-Agnostic Request Body Parsing", () => {
         },
       };
 
-      const result = await parseRpcRequest(req);
-      expect(result.kind).toBe("json");
-      expect(result.namespace).toBe("test");
-      expect(result.functionName).toBe("run");
-      expect(result.data).toEqual({ a: 1 });
+      await expect(parseRpcRequest(req)).rejects.toThrow("Unsupported Content-Type");
     });
   });
 
@@ -206,9 +202,11 @@ describe("Framework-Agnostic Request Body Parsing", () => {
       const mockFastifyReq = {
         url: "/rpc",
         method: "POST",
+        headers: { "content-type": "application/json" },
         raw: Object.assign(createMockStream([]), {
           url: "/rpc",
           method: "POST",
+          headers: { "content-type": "application/json" },
         }),
         body: {
           namespace: "users",
@@ -300,6 +298,26 @@ describe("Framework-Agnostic Request Body Parsing", () => {
       expect(parsed.status).toBe("ok");
       expect(parsed.data).toEqual({ sum: 35 });
       expect(parsed.meta.requestId).toBeDefined();
+    });
+
+    it("13. registers custom healthEndpoint on Fastify plugin", async () => {
+      const app = CoreRPC.configure({
+        healthEndpoint: "/custom-health",
+      });
+
+      const registeredRoutes: string[] = [];
+      const mockFastify = {
+        all: (path: string) => registeredRoutes.push(`ALL ${path}`),
+        get: (path: string) => registeredRoutes.push(`GET ${path}`),
+      };
+
+      const plugin = createFastifyPlugin(app, {
+        healthEndpoint: "/custom-health",
+      });
+      await plugin(mockFastify);
+
+      expect(registeredRoutes).toContain("GET /custom-health");
+      expect(registeredRoutes).toContain("GET /custom-health/");
     });
   });
 });

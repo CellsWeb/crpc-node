@@ -57,10 +57,11 @@ npx create-cellsweb-rpc-api@latest my-app --framework ultimate-express
 ## Features
 
 - **Multi-Framework Flexibility**: Choose between Vanilla Node.js, Express, Fastify, or Ultimate-Express while keeping RPC function and middleware code 100% identical.
-- **Pre-wired `@cellsweb/rpc-core`**: High performance $O(1)$ dispatching engine.
-- **Interactive & Batch Generators**: Built-in CLI scripts for adding new functions (`pnpm run create:function`) and middlewares (`pnpm run create:middleware`).
+- **Unified Framework CLI (`crpc`)**: Integrated single-binary developer CLI for dev with hot-reload (`crpc dev`), production build (`crpc build`), serving (`crpc start`), and test suites (`crpc test`).
+- **Pre-wired `@cellsweb/rpc-core`**: High performance $O(1)$ dispatching engine with sub-microsecond JIT schema validation.
+- **Interactive & AI Batch Generators**: Built-in CLI scripts for adding new functions (`crpc create:function`) and middlewares (`crpc create:middleware`) supporting non-interactive flags, JSON batch scaffolding (`--batch '<JSON>'`), and file specs (`--file spec.json`).
+- **Security & Integration Audit Testing**: Built-in in-process security audit test harness with HTML/JSON report generation (`crpc test:audit`).
 - **Pre-scaffolded Common Middlewares**: Includes `auth` (JWT verification stub) and `rateLimit` (in-memory rate limiting).
-- **Security & Integration Audit Testing**: Built-in in-process security audit test harness with HTML/JSON report generation (`pnpm run test:audit`).
 - **Pluggable Extensions**: Modular application-level `env.ts` (TypeBox), `telemetry.ts` (Sentry), and `storage.ts` (Local/S3 uploads).
 
 ---

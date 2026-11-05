@@ -104,7 +104,14 @@ export function buildRpcFormData(
   }
 
   for (const [key, value] of Object.entries(data)) {
-    safeAppend(formData, key, value);
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+    const safeKey =
+      key === "namespace"
+        ? "_data_namespace"
+        : key === "functionName"
+        ? "_data_functionName"
+        : key;
+    safeAppend(formData, safeKey, value);
   }
 
   return formData;

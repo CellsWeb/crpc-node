@@ -160,7 +160,7 @@ function tplRun(ns: string, fn: string, isMultipart: boolean, mws: string[]): st
   let importContextStr = 'import type { MiddlewareContext } from "@cellsweb/rpc-core";';
 
   if (mws.length > 0) {
-    importContextStr = 'import type { InferContext } from "@cellsweb/rpc-core";\nimport { middlewares } from "./middlewares";';
+    importContextStr = 'import type { InferContext } from "@cellsweb/rpc-core";\nimport type { middlewares } from "./middlewares";';
     contextTypeStr = "InferContext<typeof middlewares>";
   }
 
@@ -182,7 +182,7 @@ function tplRun(ns: string, fn: string, isMultipart: boolean, mws: string[]): st
 
 import type { Static } from "@sinclair/typebox";
 ${importContextStr}
-import { inputSchema, outputSchema } from "./constants";
+import type { inputSchema, outputSchema } from "./constants";
 
 type Input = Static<typeof inputSchema>;
 type Output = Static<typeof outputSchema>;
@@ -221,7 +221,7 @@ export const run = async (
 
 import type { Static } from "@sinclair/typebox";
 ${importContextStr}
-import { inputSchema, outputSchema } from "./constants";
+import type { inputSchema, outputSchema } from "./constants";
 
 type Input = Static<typeof inputSchema>;
 type Output = Static<typeof outputSchema>;
@@ -335,17 +335,24 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
   describe("3. User Flow & Access Control", () => {
     it("executes successfully with authorized user credentials", async () => {
       const actor = await createTestActor({ role: "admin", userId: "usr_authorized" });
+      const mockFile = createUploadedFile({
+        path: "/tmp/mock.png",
+        filename: "test.png",
+        mimeType: "image/png",
+        byteLength: 1024,
+      });
       const raw = await actor.callRaw("${ns}.${fn}", {
         title: "Actor Upload",
+        file: mockFile,
       });
-      expect(raw.status).toBeDefined();
+      expect(raw.status).toBe("ok");
     });
 
     it("enforces security guards and blocks unprivileged access", async () => {
       if (!metadata.isPublic) {
         const guestActor = await createTestActor({ role: "unprivileged_guest" });
         const res = await guestActor.callRaw("${ns}.${fn}", { title: "Unauthorized Attempt" });
-        expect(res.status).toBeDefined();
+        expect(res.status).toBe("error");
       }
     });
   });
@@ -353,9 +360,15 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
   // ── 4. Server Business Logic & Boundary Integrity ──
   describe("4. Server Business Logic & Boundary Integrity", () => {
     it("evaluates server logic cleanly without unhandled crashes", async () => {
-      const actor = await createTestActor({ role: "user", userId: "usr_actor_1" });
-      const res = await actor.callRaw("${ns}.${fn}", { title: "Valid Submission" });
-      expect(res.status).toBeDefined();
+      const actor = await createTestActor({ role: "admin", userId: "usr_actor_1" });
+      const mockFile = createUploadedFile({
+        path: "/tmp/mock.png",
+        filename: "test.png",
+        mimeType: "image/png",
+        byteLength: 1024,
+      });
+      const res = await actor.callRaw("${ns}.${fn}", { title: "Valid Submission", file: mockFile });
+      expect(res.status).toBe("ok");
     });
   });
 });
@@ -412,11 +425,9 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     it("executes successfully with authorized user credentials", async () => {
       const actor = await createTestActor({ role: "admin", userId: "usr_admin_1" });
       const res = await actor.callRaw("${ns}.${fn}", { example: "Actor test payload" });
-
+      expect(res.status).toBe("ok");
       if (res.status === "ok") {
-        expect(res.data).toBeDefined();
-      } else {
-        expect(res.status).toBe("error");
+        expect(res.data).toEqual({ result: "Actor test payload" });
       }
     });
 
@@ -424,7 +435,7 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
       if (!metadata.isPublic) {
         const guestActor = await createTestActor({ role: "unprivileged_guest" });
         const res = await guestActor.callRaw("${ns}.${fn}", { example: "Unauthorized attempt" });
-        expect(res.status).toBeDefined();
+        expect(res.status).toBe("error");
       }
     });
   });
@@ -432,9 +443,9 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
   // ── 4. Server Business Logic & Boundary Integrity ──
   describe("4. Server Business Logic & Boundary Integrity", () => {
     it("processes user flow and returns proper status feedback", async () => {
-      const actor = await createTestActor({ role: "user", userId: "usr_regular_1" });
+      const actor = await createTestActor({ role: "admin", userId: "usr_regular_1" });
       const res = await actor.callRaw("${ns}.${fn}", { example: "Flow test" });
-      expect(res.status).toBeDefined();
+      expect(res.status).toBe("ok");
     });
   });
 });

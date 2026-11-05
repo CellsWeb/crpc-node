@@ -1,12 +1,11 @@
 {
   "name": "@cellsweb/rpc-core",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "publishConfig": {
     "access": "public"
   },
   "description": "Core runtime engine for CellsWeb RPC API — O(1) dispatch, TypeBox schemas, Busboy multipart parser, and interactive docs",
   "main": "dist/index.js",
-  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
@@ -20,6 +19,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
@@ -39,10 +39,8 @@
     "@paralleldrive/cuid2": "^3.3.0",
     "@sinclair/typebox": "^0.34.52",
     "busboy": "^1.6.0",
-    "lru-cache": "^11.5.2",
     "mime-types": "^3.0.2",
     "pino": "^10.3.1",
-    "rate-limiter-flexible": "^11.2.0",
     "safe-stable-stringify": "^2.5.0",
     "tinyglobby": "^0.2.17"
   },

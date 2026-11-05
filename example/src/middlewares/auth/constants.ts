@@ -25,6 +25,9 @@ export const optionsSchema = Type.Object({
       { description: "Allowed user roles for this endpoint" },
     ),
   ),
+  optional: Type.Optional(
+    Type.Boolean({ description: "Allow unauthenticated access if token is missing" }),
+  ),
 });
 
 export const outputSchema = Type.Object({

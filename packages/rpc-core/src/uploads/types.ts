@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import fsPromises from "node:fs/promises";
 import type { Readable } from "node:stream";
 
 export interface UploadedFileOptions {
@@ -21,13 +23,11 @@ export class UploadedFile {
   }
 
   public createReadStream(): Readable {
-    const fs = require("node:fs");
     return fs.createReadStream(this.path);
   }
 
   public async toBuffer(): Promise<Buffer> {
-    const fs = require("node:fs/promises");
-    return fs.readFile(this.path);
+    return fsPromises.readFile(this.path);
   }
 
   public async toBlob(): Promise<Blob> {

@@ -1,6 +1,11 @@
 import pino from "pino";
 
-const level = process.env.API_LOG_LEVEL ?? "info";
+const isTestEnv =
+  process.env.NODE_ENV === "test" ||
+  Boolean(process.env.VITEST);
+
+const level =
+  process.env.API_LOG_LEVEL ?? (isTestEnv ? "silent" : "info");
 
 export const logger = pino({
   level,

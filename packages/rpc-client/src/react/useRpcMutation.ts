@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { useRpcClient } from "./context";
 import type { RpcRequestOptions } from "../types";
 
-export interface UseRpcMutationOptions<TData = unknown, TVariables = Record<string, unknown>>
+export interface UseRpcMutationOptions<TData = unknown, TVariables = unknown>
   extends Partial<RpcRequestOptions<TVariables>> {
   namespace: string;
   functionName: string;
@@ -10,7 +10,7 @@ export interface UseRpcMutationOptions<TData = unknown, TVariables = Record<stri
   onError?: (error: unknown) => void;
 }
 
-export function useRpcMutation<TData = unknown, TVariables = Record<string, unknown>>(
+export function useRpcMutation<TData = unknown, TVariables = unknown>(
   options: UseRpcMutationOptions<TData, TVariables>,
 ) {
   const client = useRpcClient();
@@ -24,17 +24,23 @@ export function useRpcMutation<TData = unknown, TVariables = Record<string, unkn
     headers: defaultHeaders,
     multipart,
     timeoutMs,
+    signal: defaultSignal,
     onSuccess,
     onError,
   } = options;
 
   const mutate = useCallback(
-    async (overrideData?: TVariables, overrideHeaders?: Record<string, string>) => {
+    async (
+      overrideData?: TVariables,
+      overrideHeaders?: Record<string, string>,
+      overrideSignal?: AbortSignal,
+    ) => {
       setLoading(true);
       setError(null);
       try {
         const finalData = overrideData !== undefined ? overrideData : defaultData;
         const finalHeaders = overrideHeaders ? { ...defaultHeaders, ...overrideHeaders } : defaultHeaders;
+        const finalSignal = overrideSignal ?? defaultSignal;
 
         const res = await client.request<TData, TVariables>({
           namespace,
@@ -43,6 +49,7 @@ export function useRpcMutation<TData = unknown, TVariables = Record<string, unkn
           headers: finalHeaders,
           multipart,
           timeoutMs,
+          signal: finalSignal,
         });
 
         onSuccess?.(res);
@@ -55,7 +62,7 @@ export function useRpcMutation<TData = unknown, TVariables = Record<string, unkn
         setLoading(false);
       }
     },
-    [client, namespace, functionName, defaultData, defaultHeaders, multipart, timeoutMs, onSuccess, onError],
+    [client, namespace, functionName, defaultData, defaultHeaders, multipart, timeoutMs, defaultSignal, onSuccess, onError],
   );
 
   return {

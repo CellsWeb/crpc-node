@@ -109,5 +109,159 @@ describe("CoreRPC Engine & Endpoints", () => {
 
     await expect(caller.call("test.unknown", {})).rejects.toThrow();
   });
+
+  it("9. invalidates cached registry after changing function or middleware directories", async () => {
+    const app = new CoreRPC({
+      functionsDir: "./non-existent-1",
+      middlewaresDir: "./non-existent-1",
+    });
+
+    const initialRegistry = await app.getRegistry();
+    app.useFunctions("./non-existent-2");
+    app.useMiddlewares("./non-existent-3");
+
+    const refreshedRegistry = await app.getRegistry();
+
+    expect(refreshedRegistry).not.toBe(initialRegistry);
+  });
+
+  it("10. supports custom healthEndpoint, rpcEndpoint and docsEndpoint", async () => {
+    const app = new CoreRPC({
+      functionsDir: "./non-existent",
+      middlewaresDir: "./non-existent",
+      healthEndpoint: "/custom-health",
+      rpcEndpoint: "/custom-rpc",
+      docsEndpoint: "/custom-docs",
+    });
+    const handler = await app.createHandler();
+    let resData = "";
+    const req = { method: "GET", url: "/custom-health" } as any;
+    const res = {
+      statusCode: 200,
+      setHeader: () => {},
+      end: (d: string) => { resData = d; },
+    } as any;
+    await handler(req, res);
+    expect(JSON.parse(resData).status).toBe("ok");
+  });
+
+  it("11. handles CORS preflight OPTIONS requests gracefully", async () => {
+    const app = new CoreRPC({
+      functionsDir: "./non-existent",
+      middlewaresDir: "./non-existent",
+      cors: { origin: "http://localhost:3000", credentials: true },
+    });
+    const handler = await app.createHandler();
+    const headersSet: Record<string, string> = {};
+    const req = {
+      method: "OPTIONS",
+      url: "/rpc",
+      headers: { origin: "http://localhost:3000" },
+    } as any;
+    const res = {
+      statusCode: 0,
+      setHeader: (k: string, v: string) => { headersSet[k] = v; },
+      end: () => {},
+    } as any;
+    await handler(req, res);
+    expect(res.statusCode).toBe(204);
+    expect(headersSet["Access-Control-Allow-Origin"]).toBe("http://localhost:3000");
+    expect(headersSet["Access-Control-Allow-Credentials"]).toBe("true");
+    expect(headersSet["Access-Control-Allow-Methods"]).toContain("POST");
+  });
+
+  it("12. passes defaulted middleware options and handles case-insensitive headers", async () => {
+    const { Type } = await import("@sinclair/typebox");
+    const app = new CoreRPC();
+    const registry = await app.getRegistry();
+
+    let capturedOptions: any = null;
+    let capturedHeaders: any = null;
+
+    // Register a middleware that specifies default options and mixed-case required header
+    registry.middlewares.set("testDefaults", {
+      name: "testDefaults",
+      filePath: "/test/run.ts",
+      optionsSchema: Type.Object({
+        timeoutSeconds: Type.Optional(Type.Number({ default: 45 })),
+        retries: Type.Optional(Type.Number({ default: 3 })),
+      }),
+      headersSchema: Type.Object({
+        "X-Tenant-ID": Type.String(),
+      }),
+      run: async ({ options, headers }, ctx) => {
+        capturedOptions = options;
+        capturedHeaders = headers;
+        return ctx;
+      },
+    });
+
+    registry.functions.set("test.headerCase", {
+      key: "test.headerCase",
+      namespace: "test",
+      functionName: "headerCase",
+      filePath: "/test/fn.ts",
+      contentType: "application/json",
+      metadata: {},
+      middlewares: [{ name: "testDefaults", options: {} }],
+      headersSchema: Type.Object({
+        "Authorization": Type.String(),
+      }),
+      run: async (input) => ({ echo: input }),
+    });
+
+    // Provide lowercased headers (like Node.js HTTP parser produces)
+    const result = await app.execute("test.headerCase", { foo: "bar" }, {
+      headers: {
+        "x-tenant-id": "tenant-42",
+        "authorization": "Bearer token123",
+      },
+    });
+
+    expect(result.status).toBe("ok");
+    // Verify schema defaults were populated!
+    expect(capturedOptions).toEqual({ timeoutSeconds: 45, retries: 3 });
+    // Verify mixed-case header was mapped
+    expect(capturedHeaders["X-Tenant-ID"]).toBe("tenant-42");
+  });
+
+  it("13. renders docs index and function docs correctly with custom docsEndpoint", async () => {
+    const app = new CoreRPC({
+      docsEndpoint: "/my-custom-docs",
+      rpcEndpoint: "/my-custom-rpc",
+      docs: true,
+    });
+    const registry = await app.getRegistry();
+    registry.functions.set("catalog.list", {
+      key: "catalog.list",
+      namespace: "catalog",
+      functionName: "list",
+      filePath: "/catalog/list/run.ts",
+      contentType: "application/json",
+      metadata: { description: "List catalog items" },
+      middlewares: [],
+      run: async () => [],
+    });
+
+    const handler = await app.createHandler();
+    let resHtml = "";
+    const req = {
+      method: "GET",
+      url: "/my-custom-docs/catalog/list",
+      headers: { host: "localhost:4000" },
+    } as any;
+    const res = {
+      statusCode: 200,
+      setHeader: () => {},
+      end: (h: string) => { resHtml = h; },
+    } as any;
+
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(resHtml).toContain("catalog");
+    expect(resHtml).toContain("list");
+    expect(resHtml).toContain("/my-custom-rpc");
+    expect(resHtml).toContain("/my-custom-docs");
+  });
 });
 

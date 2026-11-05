@@ -1,40 +1,31 @@
 {
-  "name": "@minhazursarker/create-cellsweb-rpc-api",
-  "version": "1.0.4",
-  "description": "Scaffold a production-ready CellsWeb RPC API boilerplate",
+  "name": "cellsweb-rpc-monorepo",
+  "private": true,
+  "description": "CellsWeb RPC API Monorepo — ultra-performant RPC framework with O(1) routing, runtime TypeBox validation, and universal client",
   "keywords": [
     "rpc",
     "api",
-    "boilerplate",
     "node",
     "typescript",
     "typebox"
   ],
-  "author": "MinhazurSarker",
-  "license": "UNLICENSED",
-  "main": "bin/create.js",
-  "bin": {
-    "create-cellsweb-rpc-api": "bin/create.js"
-  },
-  "files": [
-    "bin",
-    "template"
-  ],
+  "author": "Minhazur Rahman",
+  "license": "MIT",
   "scripts": {
-    "prepublishOnly": "echo 'Publishing @minhazursarker/create-cellsweb-rpc-api'"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "build": "pnpm -r --filter=!example run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "publish:all": "pnpm -r publish --access public --no-git-checks"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/MinhazurSarker/cellsweb-rpc.git"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "turbo": "^2.10.8"
   },
   "pnpm": {

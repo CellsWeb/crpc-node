@@ -11,6 +11,7 @@ export interface FunctionMetadata {
   isPublic?: boolean;
   deprecated?: boolean;
   tags?: string[];
+  worker?: boolean;
 }
 
 export type ContentTypeContract = "application/json" | "multipart/form-data";
@@ -27,14 +28,17 @@ export function defineMiddlewares<T extends MiddlewareOptionEntry[]>(middlewares
 export interface FunctionModule {
   metadata?: FunctionMetadata;
   contentType?: ContentTypeContract;
+  worker?: boolean;
   headersSchema?: TSchema;
   inputSchema?: TSchema;
   outputSchema?: TSchema;
-  run: (input: any, context: MiddlewareContext) => Promise<unknown>;
+  run?: (input: any, context: MiddlewareContext) => Promise<unknown>;
+  default?: any;
 }
 
 export interface FunctionMiddlewaresModule {
   middlewares?: MiddlewareOptionEntry[];
+  default?: any;
 }
 
 export interface RegisteredFunction {
@@ -44,6 +48,7 @@ export interface RegisteredFunction {
   filePath: string;
   metadata: FunctionMetadata;
   contentType: ContentTypeContract;
+  worker?: boolean;
   headersSchema?: TSchema;
   inputSchema?: TSchema;
   outputSchema?: TSchema;
@@ -91,7 +96,9 @@ export async function buildRegistry(options: {
   functionsDir?: string;
   middlewaresDir?: string;
   strict?: boolean;
-}): Promise<Registry> {
+} = {}): Promise<Registry> {
+  const isProd = process.env.NODE_ENV === "production";
+  const strict = options.strict ?? isProd;
   const rootDir = process.cwd();
   let functionsDir = path.resolve(rootDir, options.functionsDir ?? "src/functions");
   let middlewaresDir = path.resolve(rootDir, options.middlewaresDir ?? "src/middlewares");
@@ -105,7 +112,15 @@ export async function buildRegistry(options: {
         arg.includes("ts-node") ||
         arg.includes("vitest") ||
         arg.endsWith(".ts"),
-    ) || Boolean(process.env.VITEST || process.env.TS_NODE_DEV);
+    ) ||
+    process.execArgv.some(
+      (arg) =>
+        arg.includes("tsx") ||
+        arg.includes("ts-node") ||
+        arg.includes("strip-types") ||
+        arg.includes(".ts"),
+    ) ||
+    Boolean(process.env.VITEST || process.env.TS_NODE_DEV);
 
   if (!isRunningTs) {
     // Check if functionsDir points to src/ but compiled dist/ or .crpc/ exists
@@ -138,6 +153,10 @@ export async function buildRegistry(options: {
     }
   }
 
+  const toImportUrl = (p: string) => {
+    return pathToFileURL(p).href;
+  };
+
   const functions = new Map<string, RegisteredFunction>();
   const middlewares = new Map<string, RegisteredMiddleware>();
 
@@ -149,17 +168,26 @@ export async function buildRegistry(options: {
       const dirName = path.basename(path.dirname(filePath));
 
       try {
-        const mwMod = (await import(filePath)) as MiddlewareModule;
+        const mwMod = (await import(toImportUrl(filePath))) as MiddlewareModule;
 
         let constantsMod: Partial<MiddlewareModule> = {};
         const dirPath = path.dirname(filePath);
         const constTs = path.join(dirPath, "constants.ts");
         const constJs = path.join(dirPath, "constants.js");
-        const constantsPath = fs.existsSync(constTs) ? constTs : fs.existsSync(constJs) ? constJs : null;
+        const constMjs = path.join(dirPath, "constants.mjs");
+        const constantsPath = fs.existsSync(constTs)
+          ? constTs
+          : fs.existsSync(constJs)
+          ? constJs
+          : fs.existsSync(constMjs)
+          ? constMjs
+          : null;
         if (constantsPath) {
           try {
-            constantsMod = await import(constantsPath);
-          } catch {}
+            constantsMod = await import(toImportUrl(constantsPath));
+          } catch (cErr) {
+            if (strict) throw cErr;
+          }
         }
 
         const name = mwMod.metadata?.name ?? constantsMod.metadata?.name ?? dirName;
@@ -178,9 +206,12 @@ export async function buildRegistry(options: {
         });
       } catch (err) {
         logSystemError(`Failed to load middleware from ${filePath}`, err);
+        if (strict) throw err;
       }
     }
-  } catch {}
+  } catch (err) {
+    if (strict) throw err;
+  }
 
   // 2. Discover RPC Functions
   try {
@@ -193,57 +224,98 @@ export async function buildRegistry(options: {
     for (const filePath of fnFiles) {
       const rel = path.relative(functionsDir, filePath);
       const parts = rel.split(path.sep);
-      if (parts.length < 2) continue;
+      if (parts.length < 3) {
+        logSystemError(
+          `Skipping function at ${filePath}: Functions must be placed inside a namespace folder, e.g. functions/{namespace}/{functionName}/run.ts`,
+        );
+        continue;
+      }
       const functionName = parts[parts.length - 2];
       const namespace = parts.slice(0, -2).join(".");
       const key = `${namespace}.${functionName}`;
 
       try {
-        const fnMod = (await import(filePath)) as FunctionModule;
+        const fnMod = (await import(toImportUrl(filePath))) as FunctionModule;
 
         let constantsMod: Partial<FunctionModule> = {};
         const dirPath = path.dirname(filePath);
         const constTs = path.join(dirPath, "constants.ts");
         const constJs = path.join(dirPath, "constants.js");
-        const constantsPath = fs.existsSync(constTs) ? constTs : fs.existsSync(constJs) ? constJs : null;
+        const constMjs = path.join(dirPath, "constants.mjs");
+        const constantsPath = fs.existsSync(constTs)
+          ? constTs
+          : fs.existsSync(constJs)
+          ? constJs
+          : fs.existsSync(constMjs)
+          ? constMjs
+          : null;
         if (constantsPath) {
           try {
-            constantsMod = await import(constantsPath);
-          } catch {}
+            constantsMod = await import(toImportUrl(constantsPath));
+          } catch (cErr) {
+            if (strict) throw cErr;
+          }
         }
 
         let middlewaresMod: FunctionMiddlewaresModule = {};
         const mwTs = path.join(dirPath, "middlewares.ts");
         const mwJs = path.join(dirPath, "middlewares.js");
-        const middlewaresPath = fs.existsSync(mwTs) ? mwTs : fs.existsSync(mwJs) ? mwJs : null;
+        const mwMjs = path.join(dirPath, "middlewares.mjs");
+        const middlewaresPath = fs.existsSync(mwTs)
+          ? mwTs
+          : fs.existsSync(mwJs)
+          ? mwJs
+          : fs.existsSync(mwMjs)
+          ? mwMjs
+          : null;
         if (middlewaresPath) {
           try {
-            middlewaresMod = await import(middlewaresPath);
-          } catch {}
+            middlewaresMod = await import(toImportUrl(middlewaresPath));
+          } catch (mErr) {
+            if (strict) throw mErr;
+          }
         }
 
-        if (typeof fnMod.run !== "function") {
+        const runFn =
+          fnMod.run ??
+          (typeof fnMod.default === "function"
+            ? fnMod.default
+            : (fnMod.default as any)?.run);
+
+        if (typeof runFn !== "function") {
           continue;
         }
+
+        const isWorker = Boolean(fnMod.worker ?? constantsMod.worker ?? false);
 
         functions.set(key, {
           key,
           namespace,
           functionName,
           filePath,
+          worker: isWorker,
           metadata: fnMod.metadata ?? constantsMod.metadata ?? {},
           contentType: fnMod.contentType ?? constantsMod.contentType ?? "application/json",
           headersSchema: fnMod.headersSchema ?? constantsMod.headersSchema,
           inputSchema: fnMod.inputSchema ?? constantsMod.inputSchema,
           outputSchema: fnMod.outputSchema ?? constantsMod.outputSchema,
-          middlewares: middlewaresMod.middlewares ?? [],
-          run: fnMod.run,
+          middlewares: (() => {
+            const raw =
+              middlewaresMod.middlewares ??
+              (middlewaresMod.default as any)?.middlewares ??
+              middlewaresMod.default;
+            return Array.isArray(raw) ? raw : [];
+          })(),
+          run: runFn,
         });
       } catch (err) {
         logSystemError(`Failed to load function from ${filePath}`, err);
+        if (strict) throw err;
       }
     }
-  } catch {}
+  } catch (err) {
+    if (strict) throw err;
+  }
 
   return { functions, middlewares };
 }

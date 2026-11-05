@@ -192,6 +192,10 @@ async function main() {
 
     case "test:audit": {
       console.log("🛡️ Generating Client Security & Verification Audit Report...");
+      const auditDir = path.resolve(rootDir, "audit-reports");
+      if (!fs.existsSync(auditDir)) {
+        fs.mkdirSync(auditDir, { recursive: true });
+      }
       const code = await runChild("npx", [
         "vitest",
         "run",

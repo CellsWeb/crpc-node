@@ -163,10 +163,10 @@ async function localDelete(relativePath: string): Promise<boolean> {
     const clean = cleanStoragePath(relativePath);
     const fullPath = path.join(uploadRoot, clean);
     const resolved = path.resolve(fullPath);
-    const root = path.resolve(uploadRoot);
+    const root = path.resolve(uploadRoot) + path.sep;
 
     // Security: prevent directory traversal
-    if (!resolved.startsWith(root)) {
+    if (!resolved.startsWith(root) && resolved !== path.resolve(uploadRoot)) {
       return false;
     }
 
@@ -189,8 +189,8 @@ async function localServe(relativePath: string): Promise<{ buffer: Buffer; mimeT
     const fullPath = path.join(uploadRoot, clean);
 
     const resolved = path.resolve(fullPath);
-    const root = path.resolve(uploadRoot);
-    if (!resolved.startsWith(root)) return null;
+    const root = path.resolve(uploadRoot) + path.sep;
+    if (!resolved.startsWith(root) && resolved !== path.resolve(uploadRoot)) return null;
     if (!existsSync(fullPath)) return null;
 
     const buffer = await fs.readFile(fullPath);
