@@ -210,8 +210,8 @@ async function main() {
       node: ">=20.0.0",
     },
     dependencies: {
-      "@cellsweb/rpc-core": "^1.0.29",
-      "create-cellsweb-rpc-api": "^1.0.25",
+      "@cellsweb/rpc-core": "^1.0.30",
+      "create-cellsweb-rpc-api": "^1.0.26",
       "@aws-sdk/client-s3": "^3.700.0",
       "@paralleldrive/cuid2": "^2.2.2",
       "@sentry/node": "^8.40.0",
