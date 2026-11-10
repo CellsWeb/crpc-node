@@ -93,6 +93,10 @@ async function main() {
     args.includes("--yes") ||
     args.includes("--non-interactive");
 
+  const skipInstall =
+    args.includes("--skip-install") ||
+    args.includes("--no-install");
+
   let explicitName = null;
   const nameFlagIdx = args.findIndex((arg) => arg === "--name" || arg === "-n");
   if (nameFlagIdx !== -1 && args[nameFlagIdx + 1]) {
@@ -122,6 +126,9 @@ async function main() {
     if (str === "2" || str === "express") return "express";
     if (str === "3" || str === "fastify") return "fastify";
     if (str === "4" || str === "ultimate-express" || str === "ultimate" || str === "ue") return "ultimate-express";
+    if (str === "5" || str === "hono") return "hono";
+    if (str === "6" || str === "elysia" || str === "elysiajs" || str === "elysia.js") return "elysia";
+    if (str === "7" || str === "bun" || str === "bun-native" || str === "bun native") return "bun";
     return "node";
   }
 
@@ -154,8 +161,8 @@ async function main() {
   } else {
     projectName = explicitName || (await ask("Package name", defaultName));
     const pmAnswer =
-      explicitPm || (await ask("Package manager  [npm / pnpm / yarn]", "pnpm"));
-    pm = ["npm", "pnpm", "yarn"].includes(pmAnswer) ? pmAnswer : "pnpm";
+      explicitPm || (await ask("Package manager  [npm / pnpm / yarn / bun]", "pnpm"));
+    pm = ["npm", "pnpm", "yarn", "bun"].includes(pmAnswer) ? pmAnswer : "pnpm";
 
     if (explicitFramework) {
       framework = normalizeFramework(explicitFramework);
@@ -165,7 +172,10 @@ async function main() {
       console.log(`    ${cyan("2)")} Express ${dim("(Standard — easiest for traditional REST routes & middlewares)")}`);
       console.log(`    ${cyan("3)")} Fastify ${dim("(High performance & rich plugin ecosystem)")}`);
       console.log(`    ${cyan("4)")} Ultimate-Express ${dim("(uWebSockets.js-backed Express drop-in)")}`);
-      const fwAnswer = await ask("Choose framework [1/2/3/4]", "1");
+      console.log(`    ${cyan("5)")} Hono ${dim("(Ultra-fast Web Standards & multi-runtime: Bun, Deno, Node)")}`);
+      console.log(`    ${cyan("6)")} Elysia.js ${dim("(Bun-native & TypeBox first-class)")}`);
+      console.log(`    ${cyan("7)")} Bun Native ${dim("(Zero extra dependencies, native Bun.serve)")}`);
+      const fwAnswer = await ask("Choose framework [1/2/3/4/5/6/7]", "1");
       framework = normalizeFramework(fwAnswer);
     }
     rl.close();
@@ -210,8 +220,7 @@ async function main() {
       node: ">=20.0.0",
     },
     dependencies: {
-      "@cellsweb/rpc-core": "^1.0.30",
-      "create-cellsweb-rpc-api": "^1.0.26",
+      "@cellsweb/rpc-core": "^1.0.31",
       "@aws-sdk/client-s3": "^3.700.0",
       "@paralleldrive/cuid2": "^2.2.2",
       "@sentry/node": "^8.40.0",
@@ -226,7 +235,6 @@ async function main() {
       "tinyglobby": "^0.2.12",
     },
     devDependencies: {
-      "@clack/prompts": "^1.4.0",
       "@types/busboy": "^1.5.4",
       "@types/mime-types": "^3.0.1",
       "@types/node": "^22.15.18",
@@ -252,6 +260,13 @@ async function main() {
   } else if (framework === "ultimate-express") {
     pkg.dependencies["ultimate-express"] = "^2.2.1";
     pkg.devDependencies["@types/express"] = "^5.0.0";
+  } else if (framework === "hono") {
+    pkg.dependencies["hono"] = "^4.7.0";
+    pkg.dependencies["@hono/node-server"] = "^1.13.8";
+  } else if (framework === "elysia") {
+    pkg.dependencies["elysia"] = "^1.2.0";
+  } else if (framework === "bun") {
+    // Bun native requires zero extra dependencies!
   }
 
   fs.writeFileSync(path.join(targetDir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
@@ -279,29 +294,7 @@ async function main() {
   };
   fs.writeFileSync(path.join(targetDir, "tsconfig.json"), JSON.stringify(tsconfig, null, 2) + "\n");
 
-  // ── 6. Write scripts/tsconfig.json ────────────────────────────────────────
-  const scriptsTsconfig = {
-    compilerOptions: {
-      target: "ES2023",
-      module: "nodenext",
-      moduleResolution: "nodenext",
-      lib: ["ES2023"],
-      types: ["node"],
-      strict: true,
-      esModuleInterop: true,
-      skipLibCheck: true,
-      resolveJsonModule: true,
-      noEmit: true,
-      paths: { "@/*": ["../src/*"] },
-    },
-    include: ["./**/*"],
-    exclude: ["node_modules"],
-  };
-  const scriptsDir = path.join(targetDir, "scripts");
-  fs.mkdirSync(scriptsDir, { recursive: true });
-  fs.writeFileSync(path.join(scriptsDir, "tsconfig.json"), JSON.stringify(scriptsTsconfig, null, 2) + "\n");
-
-  // ── 7. Write .gitignore & .npmrc ──────────────────────────────────────────
+  // ── 6. Write .gitignore & .npmrc ──────────────────────────────────────────
   const gitignore = ["node_modules", "dist", ".env", "*.log", ".DS_Store"].join("\n") + "\n";
   const giPath = path.join(targetDir, ".gitignore");
   if (!fs.existsSync(giPath)) fs.writeFileSync(giPath, gitignore);
@@ -318,15 +311,19 @@ async function main() {
   }
 
   // ── 8. Install ────────────────────────────────────────────────────────────
-  console.log(`  ${dim("Installing dependencies with")} ${bold(pm)} ...\n`);
-  try {
-    const installCmd =
-      pm === "pnpm"
-        ? "pnpm install || (pnpm approve-builds esbuild && pnpm install)"
-        : `${pm} install`;
-    execSync(installCmd, { cwd: targetDir, stdio: "inherit" });
-  } catch {
-    console.log(`  ${yellow("⚠")}  Install failed — run ${bold(`${pm} install`)} manually.\n`);
+  if (!skipInstall) {
+    console.log(`  ${dim("Installing dependencies with")} ${bold(pm)} ...\n`);
+    try {
+      const installCmd =
+        pm === "pnpm"
+          ? "pnpm install || (pnpm approve-builds esbuild && pnpm install)"
+          : `${pm} install`;
+      execSync(installCmd, { cwd: targetDir, stdio: "inherit" });
+    } catch {
+      console.log(`  ${yellow("⚠")}  Install failed — run ${bold(`${pm} install`)} manually.\n`);
+    }
+  } else {
+    console.log(`  ${dim("Skipping dependency installation (--skip-install).")}\n`);
   }
 
   // ── 9. Done ───────────────────────────────────────────────────────────────
@@ -335,6 +332,9 @@ async function main() {
     express: "Express",
     fastify: "Fastify",
     "ultimate-express": "Ultimate-Express (uWebSockets.js)",
+    hono: "Hono (Web Standards & Multi-Runtime)",
+    elysia: "Elysia.js (Bun-Native & TypeBox)",
+    bun: "Bun Native (native Bun.serve)",
   };
 
   console.log(`

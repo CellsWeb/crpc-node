@@ -29,6 +29,7 @@ export interface FunctionModule {
   metadata?: FunctionMetadata;
   contentType?: ContentTypeContract;
   worker?: boolean;
+  middlewares?: MiddlewareOptionEntry[];
   headersSchema?: TSchema;
   inputSchema?: TSchema;
   outputSchema?: TSchema;
@@ -303,7 +304,9 @@ export async function buildRegistry(options: {
             const raw =
               middlewaresMod.middlewares ??
               (middlewaresMod.default as any)?.middlewares ??
-              middlewaresMod.default;
+              middlewaresMod.default ??
+              fnMod.middlewares ??
+              constantsMod.middlewares;
             return Array.isArray(raw) ? raw : [];
           })(),
           run: runFn,

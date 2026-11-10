@@ -245,7 +245,83 @@ fastify.all("/rpc", async (req, reply) => {
 });
 ```
 
-#### 3. Direct In-Process Dispatching (`app.execute`)
+#### 3. Hono (Multi-Runtime: Bun, Node.js, Deno)
+
+```ts
+import { Hono } from "hono";
+import { CoreRPC, createHonoMiddleware } from "@cellsweb/rpc-core";
+
+const app = new Hono();
+const rpc = new CoreRPC({
+  functionsDir: "./src/functions",
+  middlewaresDir: "./src/middlewares",
+});
+
+// Registers /rpc, /docs, /health, and OPTIONS preflight
+createHonoMiddleware(rpc)(app);
+
+export default app;
+```
+
+#### 4. Elysia.js (Bun-Native & TypeBox First-Class)
+
+```ts
+import { Elysia } from "elysia";
+import { CoreRPC, createElysiaPlugin } from "@cellsweb/rpc-core";
+
+const server = new Elysia();
+const rpc = new CoreRPC({
+  functionsDir: "./src/functions",
+  middlewaresDir: "./src/middlewares",
+});
+
+// Registers /rpc, /docs, /health via native Web Standards
+server.use(createElysiaPlugin(rpc));
+
+server.listen(4000, () => {
+  console.log("Elysia server running at http://localhost:4000");
+});
+```
+
+#### 5. Bun Native (Zero Extra Dependencies)
+
+```ts
+import { CoreRPC } from "@cellsweb/rpc-core";
+
+const rpc = new CoreRPC({
+  functionsDir: "./src/functions",
+  middlewaresDir: "./src/middlewares",
+  port: 4000,
+});
+
+// Option A: Idiomatic Bun default export
+export default {
+  port: 4000,
+  fetch: (req: Request) => rpc.fetch(req),
+};
+
+// Option B: Native Bun server method
+// await rpc.serveBun(4000);
+```
+
+#### 6. Universal Web Standards Fetch (`app.fetch`)
+
+Works anywhere WinterCG Web Standards `Request` / `Response` are supported (Cloudflare Workers, Deno, Next.js Route Handlers, Bun, Node.js):
+
+```ts
+import { CoreRPC } from "@cellsweb/rpc-core";
+
+const rpc = new CoreRPC({
+  functionsDir: "./src/functions",
+  middlewaresDir: "./src/middlewares",
+});
+
+export async function POST(request: Request) {
+  return await rpc.fetch(request);
+}
+```
+
+#### 7. Direct In-Process Dispatching (`app.execute`)
 
 If you want to use Express/Fastify for custom routing, URL params, or sessions and only use `@cellsweb/rpc-core` for its TypeBox validation and function registry, you can invoke functions directly in-process:
 

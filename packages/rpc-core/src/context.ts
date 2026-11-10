@@ -64,3 +64,41 @@ export function buildContext(
     signal,
   };
 }
+
+export function extractWebClientIp(request: Request, trustProxy: boolean = false): string {
+  if (trustProxy) {
+    const forwarded = request.headers.get("x-forwarded-for");
+    if (forwarded) {
+      const firstIp = forwarded.split(",")[0].trim();
+      if (firstIp) return firstIp;
+    }
+  }
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+
+  const customIp = (request as any).ip;
+  if (typeof customIp === "string" && customIp) return customIp;
+
+  return "127.0.0.1";
+}
+
+export function buildWebContext(
+  request: Request,
+  namespace: string,
+  functionName: string,
+  options?: BuildContextOptions,
+): MiddlewareContext {
+  const customId = request.headers.get("x-request-id");
+  const isValidCustomId = typeof customId === "string" && REQUEST_ID_REGEX.test(customId.trim());
+  const requestId = isValidCustomId ? customId.trim() : createId();
+
+  return {
+    requestId,
+    ip: extractWebClientIp(request, options?.trustProxy ?? false),
+    namespace,
+    functionName,
+    requestStartTime: Date.now(),
+    req: request as any,
+    signal: options?.signal ?? request.signal,
+  };
+}

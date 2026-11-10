@@ -185,12 +185,14 @@ export function validateFileRules(file: UploadedFile, schema: TSchema, fieldPath
   }
 
   if (mimeTypes !== undefined && mimeTypes.length > 0) {
+    const fileMimeBase = file.mimeType.split(";")[0].trim().toLowerCase();
     const isAllowed = mimeTypes.some((allowed) => {
-      if (allowed.endsWith("/*")) {
-        const prefix = allowed.slice(0, -2);
-        return file.mimeType.startsWith(prefix + "/");
+      const allowedBase = allowed.split(";")[0].trim().toLowerCase();
+      if (allowedBase.endsWith("/*")) {
+        const prefix = allowedBase.slice(0, -2);
+        return fileMimeBase.startsWith(prefix + "/");
       }
-      return file.mimeType === allowed;
+      return fileMimeBase === allowedBase;
     });
 
     if (!isAllowed) {

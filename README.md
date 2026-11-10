@@ -1,6 +1,6 @@
 # CellsWeb RPC Ecosystem
 
-> High-performance, zero-overhead RPC API framework for Node.js powered by sub-microsecond TypeBox JIT schema validation, declarative worker thread multi-processing, Busboy streaming multipart uploads, and $O(1)$ function dispatching.
+> High-performance, zero-overhead RPC API framework for Node.js & Bun powered by sub-microsecond TypeBox JIT schema validation, declarative worker thread multi-processing, Web Standards WinterCG Fetch API, Busboy streaming multipart uploads, and $O(1)$ function dispatching.
 
 ---
 
@@ -8,9 +8,9 @@
 
 | Package | NPM | Role | Description |
 |---|---|---|---|
-| [`@cellsweb/rpc-core`](https://www.npmjs.com/package/@cellsweb/rpc-core) | [![npm](https://img.shields.io/npm/v/@cellsweb/rpc-core.svg)](https://www.npmjs.com/package/@cellsweb/rpc-core) | Core Engine | Runtime RPC engine (`CoreRPC`), TypeBox JIT compilation, multi-threading worker pool (`worker = true`), in-process test runner (`createTestCaller`), Fastify/Express adapters, and interactive docs. |
+| [`@cellsweb/rpc-core`](https://www.npmjs.com/package/@cellsweb/rpc-core) | [![npm](https://img.shields.io/npm/v/@cellsweb/rpc-core.svg)](https://www.npmjs.com/package/@cellsweb/rpc-core) | Core Engine | Runtime RPC engine (`CoreRPC`), TypeBox JIT compilation, multi-threading worker pool (`worker = true`), in-process test runner (`createTestCaller`), Fastify/Express/Hono/Elysia adapters, native Bun support (`app.serveBun()`), and interactive docs. |
 | [`@cellsweb/rpc-client`](https://www.npmjs.com/package/@cellsweb/rpc-client) | [![npm](https://img.shields.io/npm/v/@cellsweb/rpc-client.svg)](https://www.npmjs.com/package/@cellsweb/rpc-client) | Client SDK | Universal client SDK for Web, React, Next.js, and React Native / Expo with automatic multipart conversion, query race condition suppression, and typed error handling. |
-| [`create-cellsweb-rpc-api`](https://www.npmjs.com/package/create-cellsweb-rpc-api) | [![npm](https://img.shields.io/npm/v/create-cellsweb-rpc-api.svg)](https://www.npmjs.com/package/create-cellsweb-rpc-api) | CLI Scaffolder | Universal framework CLI (`crpc`) and project scaffolder with AI batch code generation and security audit reporting. |
+| [`create-cellsweb-rpc-api`](https://www.npmjs.com/package/create-cellsweb-rpc-api) | [![npm](https://img.shields.io/npm/v/create-cellsweb-rpc-api.svg)](https://www.npmjs.com/package/create-cellsweb-rpc-api) | CLI Scaffolder | Universal framework CLI (`crpc`) and project scaffolder with AI batch code generation, security audit reporting, and multi-framework support (Node, Express, Fastify, Ultimate-Express, Hono, Elysia, Bun). |
 
 ---
 
@@ -19,13 +19,13 @@
 ### 1. Scaffold a New API Project
 
 ```bash
-# Interactive setup (Choose between Vanilla Node.js, Express, Fastify, Ultimate-Express)
+# Interactive setup (Choose Node.js, Express, Fastify, Ultimate-Express, Hono, Elysia, Bun)
 npx create-cellsweb-rpc-api@latest my-rpc-api
 
 # Or pass framework flag directly:
-npx create-cellsweb-rpc-api@latest my-rpc-api --framework express
-npx create-cellsweb-rpc-api@latest my-rpc-api --framework fastify
-npx create-cellsweb-rpc-api@latest my-rpc-api --framework ultimate-express
+npx create-cellsweb-rpc-api@latest my-rpc-api --framework hono
+npx create-cellsweb-rpc-api@latest my-rpc-api --framework elysia
+bun create cellsweb-rpc-api@latest my-rpc-api --framework bun
 ```
 
 ### 2. Start Dev Server

@@ -5,15 +5,18 @@
  * CellsWeb RPC Universal Framework CLI (crpc)
  *
  * Provides a unified, zero-config CLI for development, building, testing,
- * security auditing, and production serving with flexible entrypoint detection.
+ * security auditing, and code scaffolding with flexible runtime detection.
  */
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const [,, command, ...args] = process.argv;
 const rootDir = process.cwd();
+const isBun = typeof process.versions.bun !== "undefined";
 
 function getPackageJson() {
   const pkgPath = path.join(rootDir, "package.json");
@@ -131,12 +134,13 @@ async function main() {
       const remainingArgs = explicitArg ? args.filter((a) => a !== explicitArg) : args;
       const entryFile = resolveDevEntry(explicitArg);
 
-      console.log(`⚡ Starting CellsWeb RPC Development Server (${entryFile})...`);
-      const code = await runChild(
-        "npx",
-        ["tsx", "watch", "--clear-screen=false", entryFile, ...remainingArgs],
-        { NODE_ENV: "development" },
-      );
+      console.log(`⚡ Starting CellsWeb RPC Development Server (${entryFile})${isBun ? " [Bun]" : ""}...`);
+      const runner = isBun ? "bun" : "npx";
+      const runnerArgs = isBun
+        ? ["--watch", entryFile, ...remainingArgs]
+        : ["tsx", "watch", "--clear-screen=false", entryFile, ...remainingArgs];
+
+      const code = await runChild(runner, runnerArgs, { NODE_ENV: "development" });
       process.exit(code);
       break;
     }
@@ -161,8 +165,9 @@ async function main() {
       const remainingArgs = explicitArg ? args.filter((a) => a !== explicitArg) : args;
       const entryFile = resolveStartEntry(explicitArg);
 
-      console.log(`🚀 Starting CellsWeb RPC Production Server (${entryFile})...`);
-      const code = await runChild("node", [entryFile, ...remainingArgs], {
+      console.log(`🚀 Starting CellsWeb RPC Production Server (${entryFile})${isBun ? " [Bun]" : ""}...`);
+      const runner = isBun ? "bun" : "node";
+      const code = await runChild(runner, [entryFile, ...remainingArgs], {
         NODE_ENV: "production",
       });
       process.exit(code);
@@ -209,14 +214,38 @@ async function main() {
     }
 
     case "create:function": {
-      const code = await runChild("npx", ["tsx", "scripts/create-function.ts", ...args]);
-      process.exit(code);
+      // 1. Check for project-level custom override (backward compatibility)
+      const localScript = path.join(rootDir, "scripts", "create-function.ts");
+      if (fs.existsSync(localScript)) {
+        const runner = isBun ? "bun" : "npx";
+        const runnerArgs = isBun ? [localScript, ...args] : ["tsx", localScript, ...args];
+        const code = await runChild(runner, runnerArgs);
+        process.exit(code);
+      } else {
+        // 2. Built-in generator
+        const builtinScript = path.join(__dirname, "create-function.js");
+        const runner = isBun ? "bun" : "node";
+        const code = await runChild(runner, [builtinScript, ...args]);
+        process.exit(code);
+      }
       break;
     }
 
     case "create:middleware": {
-      const code = await runChild("npx", ["tsx", "scripts/create-middleware.ts", ...args]);
-      process.exit(code);
+      // 1. Check for project-level custom override (backward compatibility)
+      const localScript = path.join(rootDir, "scripts", "create-middleware.ts");
+      if (fs.existsSync(localScript)) {
+        const runner = isBun ? "bun" : "npx";
+        const runnerArgs = isBun ? [localScript, ...args] : ["tsx", localScript, ...args];
+        const code = await runChild(runner, runnerArgs);
+        process.exit(code);
+      } else {
+        // 2. Built-in generator
+        const builtinScript = path.join(__dirname, "create-middleware.js");
+        const runner = isBun ? "bun" : "node";
+        const code = await runChild(runner, [builtinScript, ...args]);
+        process.exit(code);
+      }
       break;
     }
 
@@ -225,9 +254,9 @@ async function main() {
 CellsWeb RPC CLI (crpc)
 
 Usage:
-  crpc dev [entry]          Start live development server with auto-reload (auto-resolves src/server.ts, src/index.ts, etc.)
-  crpc build                Compile TypeScript to production JavaScript with full ESM resolution
-  crpc start [entry]        Run compiled production server (auto-resolves package.json main / dist/server.js, etc.)
+  crpc dev [entry]          Start live development server with auto-reload (src/server.ts, etc.)
+  crpc build                Compile TypeScript with production ESM resolution (tsc + tsc-alias -f)
+  crpc start [entry]        Run compiled production server (dist/server.js, etc.)
   crpc test                 Run Vitest unit and integration test suites
   crpc test:watch           Run Vitest in watch mode
   crpc test:coverage        Run Vitest with code coverage report

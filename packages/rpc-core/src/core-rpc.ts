@@ -1,10 +1,12 @@
 import http, { type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { RequestListener } from "node:http";
+import path from "node:path";
 import { createId } from "@paralleldrive/cuid2";
 import type { MiddlewareContext } from "./context";
 import { renderDocsHtml } from "./docs/renderer";
 import { AppError, ErrorCode, isAppError, toAppError } from "./errors";
 import { handleApiRequest } from "./interceptor";
+import { handleWebRpcRequest } from "./interceptor-web";
 import {
   logger,
   logRequestError,
@@ -21,6 +23,12 @@ import {
 import { getHighResDurationMs } from "./utils/timing";
 import { runPipeline } from "./pipeline";
 import { shutdownGlobalWorkerPool } from "./workers/worker-pool";
+import {
+  scaffoldFunction,
+  scaffoldMiddleware,
+  type ScaffoldFunctionOptions,
+  type ScaffoldMiddlewareOptions,
+} from "./scaffold";
 
 export interface CorsOptions {
   origin?: string | string[] | boolean | ((origin: string) => boolean);
@@ -45,19 +53,14 @@ export interface CoreRpcOptions {
   cors?: boolean | CorsOptions;
 }
 
-function applyCors(
-  req: IncomingMessage | any,
-  res: ServerResponse | any,
+export function computeCorsHeaders(
+  originHeader: string,
   corsConfig?: boolean | CorsOptions,
-): void {
-  if (!corsConfig) return;
+): Record<string, string> {
+  if (!corsConfig) return {};
 
-  const rawReq = req.raw ?? req;
-  const rawRes = res.raw ?? res;
-  if (typeof rawRes.setHeader !== "function") return;
-
-  const originHeader = (rawReq.headers?.origin as string) ?? "";
   const config: CorsOptions = typeof corsConfig === "object" ? corsConfig : {};
+  const headers: Record<string, string> = {};
 
   let allowedOrigin: string | undefined;
 
@@ -76,14 +79,34 @@ function applyCors(
   }
 
   if (allowedOrigin) {
-    rawRes.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+    headers["Access-Control-Allow-Origin"] = allowedOrigin;
     if (config.credentials || (corsConfig === true && originHeader)) {
-      rawRes.setHeader("Access-Control-Allow-Credentials", "true");
+      headers["Access-Control-Allow-Credentials"] = "true";
     }
   }
 
   const exposedHeaders = config.exposedHeaders ?? ["X-Request-Id"];
-  rawRes.setHeader("Access-Control-Expose-Headers", exposedHeaders.join(", "));
+  headers["Access-Control-Expose-Headers"] = exposedHeaders.join(", ");
+
+  return headers;
+}
+
+function applyCors(
+  req: IncomingMessage | any,
+  res: ServerResponse | any,
+  corsConfig?: boolean | CorsOptions,
+): void {
+  if (!corsConfig) return;
+
+  const rawReq = req.raw ?? req;
+  const rawRes = res.raw ?? res;
+  if (typeof rawRes.setHeader !== "function") return;
+
+  const originHeader = (rawReq.headers?.origin as string) ?? "";
+  const headers = computeCorsHeaders(originHeader, corsConfig);
+  for (const [key, value] of Object.entries(headers)) {
+    rawRes.setHeader(key, value);
+  }
 }
 
 function normalizeEndpoint(input: string): string {
@@ -385,6 +408,203 @@ export class CoreRPC {
     return this.options.docsEndpoint ?? "/docs";
   }
 
+  public getHealthEndpoint(): string {
+    return this.options.healthEndpoint ?? "/health";
+  }
+
+  public async scaffoldFunction(
+    options: Omit<ScaffoldFunctionOptions, "targetDir"> & { targetDir?: string },
+  ): Promise<string> {
+    return await scaffoldFunction({
+      ...options,
+      targetDir:
+        options.targetDir ??
+        path.resolve(process.cwd(), this.options.functionsDir ?? "src/functions"),
+    });
+  }
+
+  public async scaffoldMiddleware(
+    options: Omit<ScaffoldMiddlewareOptions, "targetDir"> & { targetDir?: string },
+  ): Promise<string> {
+    return await scaffoldMiddleware({
+      ...options,
+      targetDir:
+        options.targetDir ??
+        path.resolve(process.cwd(), this.options.middlewaresDir ?? "src/middlewares"),
+    });
+  }
+
+  public async fetch(request: Request): Promise<Response> {
+    const registry = await this.getRegistry();
+    const url = new URL(request.url);
+    const pathname = url.pathname;
+    const method = request.method;
+
+    const rpcPath = this.options.rpcEndpoint ?? "/rpc";
+    const docsPath = this.options.docsEndpoint ?? "/docs";
+    const healthPath = this.options.healthEndpoint ?? "/health";
+
+    const origin = request.headers.get("origin") ?? "";
+    const corsHeaders = computeCorsHeaders(origin, this.options.cors);
+
+    if (method === "OPTIONS") {
+      const methods =
+        typeof this.options.cors === "object" && this.options.cors.methods
+          ? this.options.cors.methods.join(", ")
+          : "POST, GET, OPTIONS";
+      const allowedHeaders =
+        typeof this.options.cors === "object" && this.options.cors.allowedHeaders
+          ? this.options.cors.allowedHeaders.join(", ")
+          : "Content-Type, Authorization, X-Request-Id, *";
+      const maxAge =
+        typeof this.options.cors === "object" && this.options.cors.maxAge !== undefined
+          ? String(this.options.cors.maxAge)
+          : "86400";
+
+      return new Response(null, {
+        status: 204,
+        headers: {
+          ...corsHeaders,
+          "Access-Control-Allow-Methods": methods,
+          "Access-Control-Allow-Headers": allowedHeaders,
+          "Access-Control-Max-Age": maxAge,
+        },
+      });
+    }
+
+    if (method === "POST" && (pathname === rpcPath || pathname === `${rpcPath}/`)) {
+      return await handleWebRpcRequest(request, registry, {
+        trustProxy: this.options.trustProxy,
+        corsHeaders,
+      });
+    }
+
+    if (method === "GET" && (pathname === healthPath || pathname === `${healthPath}/`)) {
+      return new Response(
+        JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders,
+          },
+        },
+      );
+    }
+
+    if (
+      this.options.docs &&
+      method === "GET" &&
+      (pathname === docsPath ||
+        pathname === `${docsPath}/` ||
+        pathname.startsWith(`${docsPath}/`))
+    ) {
+      const serverUrl = `${url.protocol}//${url.host}`;
+      const html = renderDocsHtml(registry, serverUrl, request.url, rpcPath, docsPath);
+      return new Response(html, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          ...corsHeaders,
+        },
+      });
+    }
+
+    return new Response(
+      JSON.stringify({
+        status: "error",
+        code: "not_found",
+        message: `Cannot ${method} ${pathname}`,
+      }),
+      {
+        status: 404,
+        headers: {
+          "Content-Type": "application/json",
+          ...corsHeaders,
+        },
+      },
+    );
+  }
+
+  public createHonoHandler() {
+    return async (c: any) => {
+      const req = c.req?.raw ?? c.req;
+      return await this.fetch(req);
+    };
+  }
+
+  public createHonoMiddleware(options: { mountDocs?: boolean } = {}) {
+    return (honoApp: any) => {
+      const handler = this.createHonoHandler();
+      const rpcPath = this.getRpcEndpoint();
+      const docsPath = this.getDocsEndpoint();
+      const healthPath = this.getHealthEndpoint();
+
+      honoApp.all(rpcPath, handler);
+      honoApp.all(`${rpcPath}/*`, handler);
+      honoApp.get(healthPath, handler);
+      honoApp.get(`${healthPath}/*`, handler);
+
+      if (this.options.docs && options.mountDocs !== false) {
+        honoApp.get(docsPath, handler);
+        honoApp.get(`${docsPath}/*`, handler);
+      }
+
+      return honoApp;
+    };
+  }
+
+  public honoPlugin(options: { mountDocs?: boolean } = {}) {
+    return this.createHonoMiddleware(options);
+  }
+
+  public createElysiaPlugin(options: { mountDocs?: boolean } = {}) {
+    return (elysiaApp: any) => {
+      const rpcPath = this.getRpcEndpoint();
+      const docsPath = this.getDocsEndpoint();
+      const healthPath = this.getHealthEndpoint();
+
+      const handler = async ({ request }: { request: Request }) => {
+        return await this.fetch(request);
+      };
+
+      elysiaApp.all(rpcPath, handler);
+      elysiaApp.all(`${rpcPath}/*`, handler);
+      elysiaApp.get(healthPath, handler);
+      elysiaApp.get(`${healthPath}/*`, handler);
+
+      if (this.options.docs && options.mountDocs !== false) {
+        elysiaApp.get(docsPath, handler);
+        elysiaApp.get(`${docsPath}/*`, handler);
+      }
+
+      return elysiaApp;
+    };
+  }
+
+  public elysiaPlugin(options: { mountDocs?: boolean } = {}) {
+    return this.createElysiaPlugin(options);
+  }
+
+  public async serveBun(overridePort?: number): Promise<any> {
+    const bun = (globalThis as any).Bun;
+    if (!bun || typeof bun.serve !== "function") {
+      throw new AppError(
+        ErrorCode.INTERNAL_ERROR,
+        "serveBun() requires the Bun runtime environment. When running on Node.js, use app.start().",
+      );
+    }
+    const port = overridePort ?? this.options.port ?? 4000;
+    const hostname = this.options.host ?? "0.0.0.0";
+    await this.getRegistry();
+
+    return bun.serve({
+      port,
+      hostname,
+      fetch: (req: Request) => this.fetch(req),
+    });
+  }
+
   public createFastifyPlugin(
     pluginOptions: {
       rpcEndpoint?: string;
@@ -505,4 +725,26 @@ export function createFastifyPlugin(
   },
 ) {
   return app.createFastifyPlugin(options);
+}
+
+export function createHonoHandler(app: CoreRPC) {
+  return app.createHonoHandler();
+}
+
+export function createHonoMiddleware(
+  app: CoreRPC,
+  options?: { mountDocs?: boolean },
+) {
+  return app.createHonoMiddleware(options);
+}
+
+export function createElysiaPlugin(
+  app: CoreRPC,
+  options?: { mountDocs?: boolean },
+) {
+  return app.createElysiaPlugin(options);
+}
+
+export function serveBun(app: CoreRPC, overridePort?: number) {
+  return app.serveBun(overridePort);
 }

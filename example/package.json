@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@cellsweb/rpc-core": "workspace:*",
-    "create-cellsweb-rpc-api": "workspace:*",
     "@aws-sdk/client-s3": "^3.700.0",
     "@paralleldrive/cuid2": "^2.2.2",
     "@sentry/node": "^8.40.0",
@@ -32,7 +31,6 @@
     "tinyglobby": "^0.2.12"
   },
   "devDependencies": {
-    "@clack/prompts": "^1.4.0",
     "@types/busboy": "^1.5.4",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^22.15.18",

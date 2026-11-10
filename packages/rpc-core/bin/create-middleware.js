@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 /**
- * scripts/create-middleware.ts
+ * bin/create-middleware.js
  * ─────────────────────────────────────────────────────────────────────────────
+ * Built-in CellsWeb RPC middleware generator.
  * Scaffolds new central middlewares with constants, run, and unit tests.
  *
  * SUPPORTED MODES:
  *  1. Interactive Mode (Default in TTY):
- *     pnpm create:middleware
+ *     crpc create:middleware
  *
  *  2. Single CLI Flag Mode (Non-interactive for AI Coders & Devs):
- *     pnpm create:middleware --name tenantResolver --description "Resolves organization tenant"
+ *     crpc create:middleware --name tenantResolver --description "Resolves organization tenant"
  *
  *  3. Batch Mode:
- *     pnpm create:middleware --batch '["auth","rateLimit","tenantResolver"]'
- *     pnpm create:middleware --file specs/middlewares.json
+ *     crpc create:middleware --batch '["auth","rateLimit","tenantResolver"]'
+ *     crpc create:middleware --file specs/middlewares.json
  */
 
 import * as p from "@clack/prompts";
@@ -22,16 +23,66 @@ import path from "node:path";
 
 const MAX_RETRIES = 5;
 const ROOT = process.cwd();
-const MIDDLEWARES_DIR = path.join(ROOT, "src", "middlewares");
 
-export interface ScaffoldMiddlewareOptions {
-  name: string;
-  description?: string;
+export function detectConfiguredDirs(rootDir = process.cwd()) {
+  let functionsDir = null;
+  let middlewaresDir = null;
+
+  if (process.env.RPC_FUNCTIONS_DIR) functionsDir = process.env.RPC_FUNCTIONS_DIR;
+  if (process.env.RPC_MIDDLEWARES_DIR) middlewaresDir = process.env.RPC_MIDDLEWARES_DIR;
+
+  if (!functionsDir || !middlewaresDir) {
+    const pkgPath = path.join(rootDir, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+        if (!functionsDir && pkg.crpc?.functionsDir) functionsDir = pkg.crpc.functionsDir;
+        if (!middlewaresDir && pkg.crpc?.middlewaresDir) middlewaresDir = pkg.crpc.middlewaresDir;
+      } catch {}
+    }
+  }
+
+  if (!functionsDir || !middlewaresDir) {
+    const candidates = [
+      "src/server.ts",
+      "src/index.ts",
+      "src/app.ts",
+      "src/main.ts",
+      "server.ts",
+      "index.ts",
+      "app.ts",
+    ];
+    for (const file of candidates) {
+      const fullPath = path.join(rootDir, file);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const content = fs.readFileSync(fullPath, "utf-8");
+          if (!functionsDir) {
+            const fnMatch = content.match(/functionsDir\s*:\s*["']([^"']+)["']/);
+            if (fnMatch) functionsDir = fnMatch[1];
+          }
+          if (!middlewaresDir) {
+            const mwMatch = content.match(/middlewaresDir\s*:\s*["']([^"']+)["']/);
+            if (mwMatch) middlewaresDir = mwMatch[1];
+          }
+          if (functionsDir && middlewaresDir) break;
+        } catch {}
+      }
+    }
+  }
+
+  return {
+    functionsDir: path.resolve(rootDir, functionsDir || "src/functions"),
+    middlewaresDir: path.resolve(rootDir, middlewaresDir || "src/middlewares"),
+  };
 }
+
+const configuredDirs = detectConfiguredDirs(ROOT);
+const MIDDLEWARES_DIR = configuredDirs.middlewaresDir;
 
 const identifierRe = /^[a-zA-Z][a-zA-Z0-9]*$/;
 
-function tplConstants(name: string, desc?: string): string {
+function tplConstants(name, desc) {
   const descriptionStr = desc || `Enforces security policies or request transformations for ${name}`;
 
   return `/**
@@ -62,7 +113,7 @@ export const optionsSchema = Type.Object({
 `;
 }
 
-function tplRun(name: string): string {
+function tplRun(name) {
   return `/**
  * middlewares/${name}/run.ts
  * ─────────────────────────────────────────────────────────────────────────────
@@ -102,7 +153,7 @@ export const run: MiddlewareFn<Options, { ${name}: string }> = async (
 `;
 }
 
-function tplTest(name: string): string {
+function tplTest(name) {
   return `/**
  * middlewares/${name}/test.ts
  * ─────────────────────────────────────────────────────────────────────────────
@@ -140,9 +191,10 @@ describe("middleware: ${name}", () => {
 /**
  * Programmatic middleware scaffolder.
  */
-export async function scaffoldMiddleware(options: ScaffoldMiddlewareOptions): Promise<string> {
+export async function scaffoldMiddleware(options) {
   const { name, description } = options;
-  const mwDir = path.join(MIDDLEWARES_DIR, name);
+  const targetDir = options.targetDir || MIDDLEWARES_DIR;
+  const mwDir = path.join(targetDir, name);
 
   fs.mkdirSync(mwDir, { recursive: true });
   fs.writeFileSync(path.join(mwDir, "constants.ts"), tplConstants(name, description));
@@ -152,18 +204,15 @@ export async function scaffoldMiddleware(options: ScaffoldMiddlewareOptions): Pr
   return mwDir;
 }
 
-function parseCliArgs(): {
-  isCli: boolean;
-  batch?: ScaffoldMiddlewareOptions[];
-  single?: ScaffoldMiddlewareOptions;
-} {
+function parseCliArgs() {
   const args = process.argv.slice(2);
   if (args.length === 0) return { isCli: false };
 
-  let batchJson: string | undefined;
-  let filePath: string | undefined;
-  let name: string | undefined;
-  let description: string | undefined;
+  let batchJson;
+  let filePath;
+  let name;
+  let description;
+  let targetDir = MIDDLEWARES_DIR;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -175,6 +224,8 @@ function parseCliArgs(): {
       name = args[++i];
     } else if ((arg === "--description" || arg === "-d") && args[i + 1]) {
       description = args[++i];
+    } else if ((arg === "--middlewaresDir" || arg === "--dir") && args[i + 1]) {
+      targetDir = path.resolve(ROOT, args[++i]);
     }
   }
 
@@ -182,28 +233,34 @@ function parseCliArgs(): {
     const fileContent = fs.readFileSync(path.resolve(ROOT, filePath), "utf-8");
     const parsed = JSON.parse(fileContent);
     const list = Array.isArray(parsed) ? parsed : [parsed];
-    const batch = list.map((item) => (typeof item === "string" ? { name: item } : item));
+    const batch = list.map((item) => {
+      const obj = typeof item === "string" ? { name: item } : item;
+      return targetDir ? { targetDir, ...obj } : obj;
+    });
     return { isCli: true, batch };
   }
 
   if (batchJson) {
     const parsed = JSON.parse(batchJson);
     const list = Array.isArray(parsed) ? parsed : [parsed];
-    const batch = list.map((item) => (typeof item === "string" ? { name: item } : item));
+    const batch = list.map((item) => {
+      const obj = typeof item === "string" ? { name: item } : item;
+      return targetDir ? { targetDir, ...obj } : obj;
+    });
     return { isCli: true, batch };
   }
 
   if (name) {
     return {
       isCli: true,
-      single: { name, description },
+      single: { name, description, targetDir },
     };
   }
 
   return { isCli: false };
 }
 
-async function main(): Promise<void> {
+async function main() {
   const cliArgs = parseCliArgs();
 
   // ── 1. Batch or CLI Flags Mode (Non-interactive) ──
@@ -244,7 +301,7 @@ async function main(): Promise<void> {
     });
     if (p.isCancel(raw)) { p.cancel("Cancelled."); process.exit(0); }
 
-    const name = (raw as string).trim();
+    const name = raw.trim();
     if (fs.existsSync(path.join(MIDDLEWARES_DIR, name))) {
       const remaining = MAX_RETRIES - attempt - 1;
       if (remaining === 0) {
@@ -268,7 +325,7 @@ async function main(): Promise<void> {
     spin.stop("Done");
   } catch (err) {
     spin.stop("Failed");
-    p.log.error((err as Error).message);
+    p.log.error(err.message);
     process.exit(1);
   }
 

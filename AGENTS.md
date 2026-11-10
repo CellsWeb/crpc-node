@@ -138,6 +138,21 @@ When modifying or extending any package in this codebase, **YOU MUST ADHERE TO T
   - Resolved pure Node.js ESM relative imports across templates, example app, and scaffolders by eliding type imports via `import type`.
   - Normalized monorepo root (`private: true`), purged unused dependencies, and established clean monorepo test scripts.
 
+- **Phase 8 (Web Standards, Hono, Elysia.js & Bun Native Support)**:
+  - Added native Web Standards WinterCG Fetch API support (`app.fetch(request: Request): Promise<Response>`) to `@cellsweb/rpc-core`.
+  - Added first-class Hono adapters (`createHonoHandler`, `createHonoMiddleware`, `app.honoPlugin`).
+  - Added first-class Elysia.js plugin (`createElysiaPlugin`, `app.elysiaPlugin`).
+  - Added native Bun server support (`app.serveBun()`) and Bun CLI detection with `--watch` acceleration in `crpc`.
+  - Added Web standard `request.formData()` streaming file intake with conversion to authentic `UploadedFile` instances.
+  - Added scaffolding support in `create-cellsweb-rpc-api` for Hono (`-f hono`), Elysia (`-f elysia`), and Bun Native (`-f bun`).
+
+- **Phase 9 (Universal Framework CLI & Zero-Script Project Architecture)**:
+  - Consolidated `crpc` CLI and generators (`create-function`, `create-middleware`) directly into `@cellsweb/rpc-core/bin/` (and mirrored in `create-cellsweb-rpc-api/bin/`).
+  - Completely purged the legacy `scripts/` folder (`create-function.ts`, `create-middleware.ts`, `scripts/tsconfig.json`) from project templates and user repositories.
+  - Eliminated `@clack/prompts` from user project `devDependencies` and removed `create-cellsweb-rpc-api` as a project dependency (projects depend solely on `@cellsweb/rpc-core`).
+  - Added programmatic scaffolding exports (`scaffoldFunction`, `scaffoldMiddleware`) to `@cellsweb/rpc-core`.
+  - Added local script override fallback in `crpc` for 100% backward compatibility with legacy projects.
+
 ---
 
 ## 📝 5. Detailed Conversation Summary & Resolved Gotchas
@@ -308,6 +323,30 @@ This section documents the specific problems, design decisions, and solutions es
 ### Gotcha 40: Prototype Key Sanitization in Client FormData and Server Rehydration
 - **Symptom**: Passing prototype keys (`__proto__`, `constructor`, `prototype`) in FormData objects or worker rehydration could pollute object prototypes or bypass property lookups.
 - **Solution**: Enforced `FORBIDDEN_KEYS` skipping across `buildRpcFormData()`, `validateSchema()` file restoration, and worker thread `rehydrateFiles()`.
+
+### Gotcha 41: Bun / Web Standard MIME Type Parameter Stripping in `validateFileRules`
+- **Symptom**: Creating a `Blob` in Bun with `{ type: "text/plain" }` sets its MIME type to `"text/plain;charset=utf-8"`. When schema declared `File({ mimeTypes: ["text/plain"] })`, strict equality check failed with `validation_error: File has invalid MIME type "text/plain;charset=utf-8"`.
+- **Solution**: Updated `validateFileRules` in `packages/rpc-core/src/utils/typebox.ts` to strip MIME type parameters (`split(";")[0].trim().toLowerCase()`) for both the uploaded file and schema allowed types. Also normalized `detectedMime` in `web.ts` and `multipart.ts`.
+
+### Gotcha 42: Web Standard `Request.formData()` vs Busboy Streaming Parity
+- **Requirement**: In Bun and Web standards runtimes, incoming multipart requests use `request.formData()` rather than Node.js `IncomingMessage` streams.
+- **Solution**: Built `parseWebRequest` in `packages/rpc-core/src/request/web.ts`, extracting Web `File` objects, writing them to secure `0o700` temp directories, and instantiating authentic `UploadedFile` class instances so handlers have identical `.toBuffer()`, `.createReadStream()`, and `.path` access across Node, Bun, and Web frameworks.
+
+### Gotcha 43: Universal CLI Runtime Detection for Bun (`crpc`)
+- **Requirement**: Developers using Bun wanted instant startup without `npx tsx` overhead.
+- **Solution**: Added Bun detection (`typeof process.versions.bun !== "undefined"`) in `bin/crpc.js`. When invoked in Bun, `crpc dev` leverages native `bun --watch`, `crpc start` uses `bun`, and generator scripts execute directly via `bun` without external shims.
+
+### Gotcha 44: Module Scope in CLI Binaries vs Library ESM (`ReferenceError: exports`)
+- **Symptom**: Adding `"type": "module"` to `packages/rpc-core/package.json` caused TypeScript `NodeNext` compilation of `src/` to require `.js` extensions on 95 relative imports, while removing it caused Node to warn when executing `bin/crpc.js`.
+- **Solution**: Placed an isolated `packages/rpc-core/bin/package.json` with `{ "type": "module" }`, allowing Node to execute `bin/` CLI scripts as native ESM without disrupting library TypeScript compilation.
+
+### Gotcha 45: Dynamic Import Extension in NodeNext (`TS2835`)
+- **Symptom**: In `packages/rpc-core/src/core-rpc.ts`, dynamic `await import("./scaffold")` threw `TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'`.
+- **Solution**: Statically imported `scaffoldFunction` and `scaffoldMiddleware` from `./scaffold` at top level and provided default fallback directories (`this.options.functionsDir ?? "src/functions"`).
+
+### Gotcha 46: Web Standards Multipart Stream Flood Containment
+- **Symptom**: While `busboy` in `multipart.ts` capped fields at 100 and files at 20, Web Standards `parseWebRequest` in `web.ts` only checked byte bounds, exposing the fetch pipeline to field flooding and file descriptor exhaustion.
+- **Solution**: Enforced strict stream bounds in `web.ts` (`MAX_PARTS: 150`, `MAX_FIELDS: 100`, `MAX_FIELD_SIZE: 1MB`, `MAX_FILES: 20`) with automatic temp file cleanup on abort.
 
 ---
 

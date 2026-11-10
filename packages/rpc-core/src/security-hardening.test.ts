@@ -427,4 +427,172 @@ describe("Security & Robustness Probes", () => {
       await expect(parseRpcRequest(mockReq)).rejects.toThrow("exceeds maximum allowed length");
     });
   });
+
+  describe("9. Fail-Closed Middleware Enforcement", () => {
+    it("fails closed with INTERNAL_ERROR if declared middleware is unregistered", async () => {
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      const os = await import("node:os");
+
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "rpc-mw-failclosed-"));
+      await fs.writeFile(
+        path.join(tempDir, "package.json"),
+        JSON.stringify({ type: "module" }),
+      );
+      const fnDir = path.join(tempDir, "admin", "secureAction");
+      await fs.mkdir(fnDir, { recursive: true });
+
+      await fs.writeFile(
+        path.join(fnDir, "middlewares.js"),
+        `
+        export const middlewares = [{ name: "nonExistentMiddleware" }];
+        `,
+      );
+
+      await fs.writeFile(
+        path.join(fnDir, "run.js"),
+        `
+        export async function run() {
+          throw new Error("HANDLER_SHOULD_NEVER_RUN");
+        }
+        `,
+      );
+
+      const app = new CoreRPC({
+        functionsDir: tempDir,
+        middlewaresDir: "./non-existent",
+      });
+
+      const res = await app.execute("admin.secureAction", {});
+      expect(res.status).toBe("error");
+      if (res.status === "error") {
+        expect(res.code).toBe("internal_error");
+        expect(res.message).toContain("nonExistentMiddleware");
+      }
+
+      await app.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+  });
+
+  describe("10. Web Standard Multipart DoS & Flood Protections", () => {
+    it("rejects Web Standard multipart requests exceeding 100 text fields", async () => {
+      const { parseWebRequest } = await import("./request/web");
+      const formData = new FormData();
+      formData.append("namespace", "public");
+      formData.append("functionName", "upload");
+
+      for (let i = 0; i < 105; i++) {
+        formData.append(`field_${i}`, `data_${i}`);
+      }
+
+      const req = new Request("http://localhost:4000/rpc", {
+        method: "POST",
+        body: formData,
+      });
+
+      await expect(parseWebRequest(req)).rejects.toThrow("exceeded limit of 100 fields");
+    });
+
+    it("rejects Web Standard multipart requests with field exceeding 1MB", async () => {
+      const { parseWebRequest } = await import("./request/web");
+      const formData = new FormData();
+      formData.append("namespace", "public");
+      formData.append("functionName", "upload");
+      formData.append("largeField", "A".repeat(1024 * 1024 + 100));
+
+      const req = new Request("http://localhost:4000/rpc", {
+        method: "POST",
+        body: formData,
+      });
+
+      await expect(parseWebRequest(req)).rejects.toThrow("exceeded maximum field size");
+    });
+
+    it("rejects Web Standard multipart requests exceeding 20 files", async () => {
+      const { parseWebRequest } = await import("./request/web");
+      const formData = new FormData();
+      formData.append("namespace", "public");
+      formData.append("functionName", "upload");
+
+      for (let i = 0; i < 25; i++) {
+        formData.append(`file_${i}`, new Blob(["file-content"], { type: "text/plain" }), `file_${i}.txt`);
+      }
+
+      const req = new Request("http://localhost:4000/rpc", {
+        method: "POST",
+        body: formData,
+      });
+
+      await expect(parseWebRequest(req)).rejects.toThrow("exceeded limit of 20 files");
+    });
+
+    it("filters prototype pollution keys from Web Standard FormData", async () => {
+      const { parseWebRequest } = await import("./request/web");
+      const formData = new FormData();
+      formData.append("namespace", "public");
+      formData.append("functionName", "upload");
+      formData.append("__proto__", '{"polluted":true}');
+      formData.append("constructor", "evil");
+      formData.append("prototype", "evil");
+      formData.append("safeKey", "safeValue");
+
+      const req = new Request("http://localhost:4000/rpc", {
+        method: "POST",
+        body: formData,
+      });
+
+      const parsed = await parseWebRequest(req);
+      expect(parsed.data.safeKey).toBe("safeValue");
+      expect((parsed.data as any).__proto__).toBeUndefined();
+      expect((Object.prototype as any).polluted).toBeUndefined();
+      expect(parsed.data.constructor).toBeUndefined();
+      expect(parsed.data.prototype).toBeUndefined();
+    });
+  });
+
+  describe("11. Worker Pool Non-Cloneable Payload Protection", () => {
+    it("gracefully catches non-cloneable objects passed to worker threads without crashing pool", async () => {
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      const os = await import("node:os");
+
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "rpc-worker-clone-"));
+      await fs.writeFile(
+        path.join(tempDir, "package.json"),
+        JSON.stringify({ type: "module" }),
+      );
+      const fnDir = path.join(tempDir, "worker", "cloneCheck");
+      await fs.mkdir(fnDir, { recursive: true });
+
+      await fs.writeFile(
+        path.join(fnDir, "run.js"),
+        `
+        export const worker = true;
+        export async function run(data) {
+          return { ok: true };
+        }
+        `,
+      );
+
+      const app = new CoreRPC({
+        functionsDir: tempDir,
+        middlewaresDir: "./non-existent",
+      });
+
+      // Symbols and functions cannot be cloned via postMessage structured clone algorithm
+      const res = await app.execute("worker.cloneCheck", {
+        func: () => "cannot-clone",
+        sym: Symbol("test"),
+      });
+
+      expect(res.status).toBe("error");
+      if (res.status === "error") {
+        expect(res.code).toBe("internal_error");
+      }
+
+      await app.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    });
+  });
 });

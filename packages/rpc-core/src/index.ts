@@ -1,15 +1,30 @@
 export {
   buildContext,
+  buildWebContext,
   extractClientIp,
+  extractWebClientIp,
   type InferContext,
   type MiddlewareContext,
 } from "./context";
 export {
   CoreRPC,
+  computeCorsHeaders,
   createFastifyPlugin,
+  createHonoHandler,
+  createHonoMiddleware,
+  createElysiaPlugin,
+  serveBun,
   type CoreRpcOptions,
   type CorsOptions,
 } from "./core-rpc";
+export {
+  handleWebRpcRequest,
+  type HandleWebRpcRequestOptions,
+} from "./interceptor-web";
+export {
+  parseWebRequest,
+  normalizeWebHeaders,
+} from "./request/web";
 export {
   runPipeline,
   type PipelineResult,
@@ -43,6 +58,15 @@ export {
   type Registry,
 } from "./registry";
 export { parseRpcRequest, type ParsedRpcRequest } from "./request";
+export {
+  scaffoldFunction,
+  scaffoldMiddleware,
+  getExistingNamespaces,
+  getAvailableMiddlewares,
+  detectConfiguredDirs,
+  type ScaffoldFunctionOptions,
+  type ScaffoldMiddlewareOptions,
+} from "./scaffold";
 export {
   createTestCaller,
   type ExecuteOptions,

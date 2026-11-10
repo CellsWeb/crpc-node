@@ -39,7 +39,21 @@ npx create-cellsweb-rpc-api@latest my-app --framework fastify
 
 # 4. Ultimate-Express (Extreme Throughput — uWebSockets.js-backed Express drop-in)
 npx create-cellsweb-rpc-api@latest my-app --framework ultimate-express
+
+# 5. Hono (Ultra-fast Web Standards & multi-runtime: Bun, Node.js, Deno)
+npx create-cellsweb-rpc-api@latest my-app --framework hono
+
+# 6. Elysia.js (Bun-native & TypeBox first-class)
+npx create-cellsweb-rpc-api@latest my-app --framework elysia
+
+# 7. Bun Native (Zero extra dependencies, native Bun.serve)
+bun create cellsweb-rpc-api@latest my-app --framework bun
 ```
+
+### Automation & CI Flags
+- `--skip-install` / `--no-install`: Skip automated package installation.
+- `--yes` / `-y`: Non-interactive mode using defaults.
+- `--pm [npm|pnpm|yarn|bun]`: Specify package manager explicitly.
 
 ---
 
@@ -49,8 +63,11 @@ npx create-cellsweb-rpc-api@latest my-app --framework ultimate-express
 | :--- | :--- | :--- |
 | **Vanilla Node.js** *(Default)* | *None (Zero extra deps)* | Highest raw performance directly on native `node:http`. |
 | **Express** | `express`, `@types/express` | Standard Express server; easily mount traditional REST routes alongside `/rpc`. |
-| **Fastify** | `fastify` | Fastify server with raw stream forwarding via `reply.hijack()`. |
+| **Fastify** | `fastify` | Fastify server with built-in plugin adapter (`app.createFastifyPlugin()`). |
 | **Ultimate-Express** | `ultimate-express` | Drop-in Express replacement powered by `uWebSockets.js` for extreme I/O throughput. |
+| **Hono** | `hono`, `@hono/node-server` | Universal Web Standards engine running seamlessly across Bun, Node.js, and Edge runtimes. |
+| **Elysia.js** | `elysia` | Bun-first web framework with native TypeBox alignment and high developer ergonomics. |
+| **Bun Native** | *None (Zero extra deps)* | Ultra-fast execution on native `Bun.serve` with zero third-party web framework overhead. |
 
 ---
 

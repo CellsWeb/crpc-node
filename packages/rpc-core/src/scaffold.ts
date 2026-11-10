@@ -1,30 +1,12 @@
-#!/usr/bin/env node
 /**
- * scripts/create-function.ts
+ * packages/rpc-core/src/scaffold.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Scaffolds a new API function with constants, run, optional middlewares, and comprehensive audit test files.
- *
- * SUPPORTED MODES:
- *  1. Interactive Mode (Default in TTY):
- *     pnpm create:function
- *
- *  2. Single CLI Flag Mode (Non-interactive for AI Coders & Devs):
- *     pnpm create:function --ns admin.products --name create --contentType json --middlewares auth,rateLimit
- *
- *  3. Batch Mode (Scaffold multiple functions in one command):
- *     pnpm create:function --batch '[{"ns":"admin.products","name":"create","middlewares":["auth"]},{"ns":"admin.products","name":"delete"}]'
- *     pnpm create:function --file specs/functions.json
+ * Programmatic scaffolding utilities for CellsWeb RPC functions & middlewares.
  */
 
-import * as p from "@clack/prompts";
 import fs from "node:fs";
 import path from "node:path";
 import { glob } from "tinyglobby";
-
-const MAX_RETRIES = 5;
-const ROOT = process.cwd();
-const FUNCTIONS_DIR = path.join(ROOT, "src", "functions");
-const MIDDLEWARES_DIR = path.join(ROOT, "src", "middlewares");
 
 export interface ScaffoldFunctionOptions {
   namespace: string;
@@ -32,13 +14,80 @@ export interface ScaffoldFunctionOptions {
   contentType?: "application/json" | "multipart/form-data" | "json" | "multipart";
   middlewares?: string[];
   description?: string;
+  targetDir?: string;
 }
 
-export async function getExistingNamespaces(): Promise<string[]> {
-  if (!fs.existsSync(FUNCTIONS_DIR)) return [];
+export interface ScaffoldMiddlewareOptions {
+  name: string;
+  description?: string;
+  targetDir?: string;
+}
+
+export function detectConfiguredDirs(rootDir: string = process.cwd()): {
+  functionsDir: string;
+  middlewaresDir: string;
+} {
+  let functionsDir: string | null = null;
+  let middlewaresDir: string | null = null;
+
+  // 1. Check environment variables
+  if (process.env.RPC_FUNCTIONS_DIR) functionsDir = process.env.RPC_FUNCTIONS_DIR;
+  if (process.env.RPC_MIDDLEWARES_DIR) middlewaresDir = process.env.RPC_MIDDLEWARES_DIR;
+
+  // 2. Check package.json#crpc
+  if (!functionsDir || !middlewaresDir) {
+    const pkgPath = path.join(rootDir, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+        if (!functionsDir && pkg.crpc?.functionsDir) functionsDir = pkg.crpc.functionsDir;
+        if (!middlewaresDir && pkg.crpc?.middlewaresDir) middlewaresDir = pkg.crpc.middlewaresDir;
+      } catch {}
+    }
+  }
+
+  // 3. Scan server entry file (src/server.ts, src/index.ts, src/app.ts, server.ts, etc.)
+  if (!functionsDir || !middlewaresDir) {
+    const candidates = [
+      "src/server.ts",
+      "src/index.ts",
+      "src/app.ts",
+      "src/main.ts",
+      "server.ts",
+      "index.ts",
+      "app.ts",
+    ];
+    for (const file of candidates) {
+      const fullPath = path.join(rootDir, file);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const content = fs.readFileSync(fullPath, "utf-8");
+          if (!functionsDir) {
+            const fnMatch = content.match(/functionsDir\s*:\s*["']([^"']+)["']/);
+            if (fnMatch) functionsDir = fnMatch[1];
+          }
+          if (!middlewaresDir) {
+            const mwMatch = content.match(/middlewaresDir\s*:\s*["']([^"']+)["']/);
+            if (mwMatch) middlewaresDir = mwMatch[1];
+          }
+          if (functionsDir && middlewaresDir) break;
+        } catch {}
+      }
+    }
+  }
+
+  return {
+    functionsDir: path.resolve(rootDir, functionsDir || "src/functions"),
+    middlewaresDir: path.resolve(rootDir, middlewaresDir || "src/middlewares"),
+  };
+}
+
+export async function getExistingNamespaces(functionsDir?: string): Promise<string[]> {
+  const dir = functionsDir || detectConfiguredDirs().functionsDir;
+  if (!fs.existsSync(dir)) return [];
 
   const runFiles = await glob("**/run.ts", {
-    cwd: FUNCTIONS_DIR,
+    cwd: dir,
     absolute: false,
     ignore: ["**/*.spec.ts", "**/__tests__/**"],
   });
@@ -54,17 +103,15 @@ export async function getExistingNamespaces(): Promise<string[]> {
   return Array.from(namespaces).sort();
 }
 
-export function getAvailableMiddlewares(): string[] {
-  if (!fs.existsSync(MIDDLEWARES_DIR)) return [];
+export function getAvailableMiddlewares(middlewaresDir?: string): string[] {
+  const dir = middlewaresDir || detectConfiguredDirs().middlewaresDir;
+  if (!fs.existsSync(dir)) return [];
   return fs
-    .readdirSync(MIDDLEWARES_DIR, { withFileTypes: true })
+    .readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && !e.name.startsWith("."))
     .map((e) => e.name)
     .sort();
 }
-
-const identifierRe = /^[a-zA-Z][a-zA-Z0-9]*$/;
-const namespaceRe = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$/;
 
 function tplConstants(ns: string, fn: string, isMultipart: boolean, desc?: string): string {
   const nsPath = ns.replace(/\./g, "/");
@@ -75,12 +122,6 @@ function tplConstants(ns: string, fn: string, isMultipart: boolean, desc?: strin
  * functions/${nsPath}/${fn}/constants.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * SCHEMA & CONTRACT DEFINITION
- *
- * WHAT TO TOUCH:
- *  - metadata: Human-readable description, tags, public status for API docs.
- *  - contentType: Strictly "multipart/form-data" for file uploads.
- *  - inputSchema: Define form fields and file attachments using File() or Files().
- *  - outputSchema: Define what this function returns.
  */
 
 import { Type } from "@sinclair/typebox";
@@ -123,12 +164,6 @@ export const outputSchema = Type.Object({
  * functions/${nsPath}/${fn}/constants.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * SCHEMA & CONTRACT DEFINITION
- *
- * WHAT TO TOUCH:
- *  - metadata: Description, public access, tags.
- *  - contentType: "application/json" (default).
- *  - inputSchema: Define fields expected in req.body.data. Include description in Type properties!
- *  - outputSchema: Define structure returned by run(). Include description in Type properties!
  */
 
 import { Type } from "@sinclair/typebox";
@@ -169,15 +204,6 @@ function tplRun(ns: string, fn: string, isMultipart: boolean, mws: string[]): st
  * functions/${nsPath}/${fn}/run.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * BUSINESS LOGIC HANDLER
- *
- * WHAT TO TOUCH:
- *  - Place core business operations here.
- *  - Access input fields: input.title, input.file.filename, input.file.toBuffer().
- *  - Access context variables provided by middlewares in _context.
- *
- * WHAT TO EXPECT:
- *  - input is guaranteed to be validated against inputSchema.
- *  - The return object MUST match outputSchema.
  */
 
 import type { Static } from "@sinclair/typebox";
@@ -191,7 +217,6 @@ export const run = async (
   input: Input,
   _context: ${contextTypeStr},
 ): Promise<Output> => {
-  // Access uploaded file properties safely
   const filename = input.file.filename;
   const fileSize = input.file.byteLength;
 
@@ -208,15 +233,6 @@ export const run = async (
  * functions/${nsPath}/${fn}/run.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * BUSINESS LOGIC HANDLER
- *
- * WHAT TO TOUCH:
- *  - Implement function logic here.
- *  - Access input fields via input.*.
- *  - Access context values (e.g. auth user, ip, headers) via _context.
- *
- * WHAT TO EXPECT:
- *  - Input is pre-validated by TypeBox inputSchema.
- *  - Return value is validated against outputSchema before sending response.
  */
 
 import type { Static } from "@sinclair/typebox";
@@ -255,8 +271,6 @@ function tplMiddlewares(ns: string, fn: string, mws: string[]): string {
  * functions/${nsPath}/${fn}/middlewares.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * FUNCTION MIDDLEWARE PIPELINE
- *
- * Declarative list of central middlewares executed in order before run().
  */
 
 import { defineMiddlewares } from "@cellsweb/rpc-core";
@@ -267,15 +281,15 @@ ${entries}
 `;
 }
 
-function tplTest(ns: string, fn: string, isMultipart: boolean): string {
+function tplTest(ns: string, fn: string, isMultipart: boolean, mws: string[] = []): string {
   const nsPath = ns.replace(/\./g, "/");
+  const hasAuth = mws.includes("auth");
 
   if (isMultipart) {
     return `/**
  * functions/${nsPath}/${fn}/test.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * COMPREHENSIVE SECURITY & EXECUTION AUDIT FOR ${ns}.${fn}
- * Run with: pnpm test | pnpm test:audit
  */
 
 import { describe, it, expect } from "vitest";
@@ -287,7 +301,6 @@ import { createMockContext } from "@/test/helpers";
 import { createTestActor } from "@/test/testActor";
 
 describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
-  // ── 1. Schema & Contract Integrity ──
   describe("1. Schema & Contract Integrity", () => {
     it("conforms to valid TypeBox metadata contract", () => {
       expect(metadata).toBeDefined();
@@ -301,7 +314,6 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
   });
 
-  // ── 2. Direct Handler Execution ──
   describe("2. Handler Execution (run.ts)", () => {
     it("executes business logic with mock file attachment", async () => {
       const mockFile = createUploadedFile({
@@ -331,7 +343,6 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
   });
 
-  // ── 3. User Flow with Credentials & Access Enforcement ──
   describe("3. User Flow & Access Control", () => {
     it("executes successfully with authorized user credentials", async () => {
       const actor = await createTestActor({ role: "admin", userId: "usr_authorized" });
@@ -349,7 +360,7 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
 
     it("enforces security guards and blocks unprivileged access", async () => {
-      if (!metadata.isPublic) {
+      if (${hasAuth}) {
         const guestActor = await createTestActor({ role: "unprivileged_guest" });
         const res = await guestActor.callRaw("${ns}.${fn}", { title: "Unauthorized Attempt" });
         expect(res.status).toBe("error");
@@ -357,7 +368,6 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
   });
 
-  // ── 4. Server Business Logic & Boundary Integrity ──
   describe("4. Server Business Logic & Boundary Integrity", () => {
     it("evaluates server logic cleanly without unhandled crashes", async () => {
       const actor = await createTestActor({ role: "admin", userId: "usr_actor_1" });
@@ -379,7 +389,6 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
  * functions/${nsPath}/${fn}/test.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * SECURITY & END-TO-END EXECUTION AUDIT FOR ${ns}.${fn}
- * Run with: pnpm test | crpc test | crpc test:audit
  */
 
 import { describe, it, expect } from "vitest";
@@ -390,7 +399,6 @@ import { createMockContext } from "@/test/helpers";
 import { createTestActor } from "@/test/testActor";
 
 describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
-  // ── 1. Schema Contract & Payload Validation ──
   describe("1. Schema Contract & Payload Validation", () => {
     it("exports valid metadata configuration", () => {
       expect(metadata).toBeDefined();
@@ -404,7 +412,6 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
   });
 
-  // ── 2. Direct Handler Execution with Mock Fixtures ──
   describe("2. Direct Handler Execution (run.ts)", () => {
     it("executes business logic with mock context credentials", async () => {
       const context = createMockContext({
@@ -420,7 +427,6 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
   });
 
-  // ── 3. User Flow with Credentials & Access Enforcement ──
   describe("3. User Flow & Access Control", () => {
     it("executes successfully with authorized user credentials", async () => {
       const actor = await createTestActor({ role: "admin", userId: "usr_admin_1" });
@@ -432,7 +438,7 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
 
     it("enforces security guards and blocks unprivileged access", async () => {
-      if (!metadata.isPublic) {
+      if (${hasAuth}) {
         const guestActor = await createTestActor({ role: "unprivileged_guest" });
         const res = await guestActor.callRaw("${ns}.${fn}", { example: "Unauthorized attempt" });
         expect(res.status).toBe("error");
@@ -440,7 +446,6 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
   });
 
-  // ── 4. Server Business Logic & Boundary Integrity ──
   describe("4. Server Business Logic & Boundary Integrity", () => {
     it("processes user flow and returns proper status feedback", async () => {
       const actor = await createTestActor({ role: "admin", userId: "usr_regular_1" });
@@ -452,9 +457,6 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
 `;
 }
 
-/**
- * Programmatic function scaffolder.
- */
 export async function scaffoldFunction(
   options: ScaffoldFunctionOptions | Record<string, any>,
 ): Promise<string> {
@@ -470,13 +472,15 @@ export async function scaffoldFunction(
   const isMultipart =
     contentType === "multipart/form-data" || contentType === "multipart";
 
-  const nsDir = path.join(FUNCTIONS_DIR, namespace.replace(/\./g, path.sep));
+  const defaultDirs = detectConfiguredDirs();
+  const root = options.targetDir || defaultDirs.functionsDir;
+  const nsDir = path.join(root, namespace.replace(/\./g, path.sep));
   const fnDir = path.join(nsDir, name);
 
   fs.mkdirSync(fnDir, { recursive: true });
   fs.writeFileSync(path.join(fnDir, "constants.ts"), tplConstants(namespace, name, isMultipart, description));
   fs.writeFileSync(path.join(fnDir, "run.ts"), tplRun(namespace, name, isMultipart, middlewares));
-  fs.writeFileSync(path.join(fnDir, "test.ts"), tplTest(namespace, name, isMultipart));
+  fs.writeFileSync(path.join(fnDir, "test.ts"), tplTest(namespace, name, isMultipart, middlewares));
 
   if (middlewares.length > 0) {
     fs.writeFileSync(path.join(fnDir, "middlewares.ts"), tplMiddlewares(namespace, name, middlewares));
@@ -485,199 +489,96 @@ export async function scaffoldFunction(
   return fnDir;
 }
 
-function parseCliArgs(): {
-  isCli: boolean;
-  batch?: ScaffoldFunctionOptions[];
-  single?: ScaffoldFunctionOptions;
-} {
-  const args = process.argv.slice(2);
-  if (args.length === 0) return { isCli: false };
+export async function scaffoldMiddleware(
+  options: ScaffoldMiddlewareOptions,
+): Promise<string> {
+  const { name, description } = options;
+  const defaultDirs = detectConfiguredDirs();
+  const root = options.targetDir || defaultDirs.middlewaresDir;
+  const mwDir = path.join(root, name);
 
-  let batchJson: string | undefined;
-  let filePath: string | undefined;
-  let namespace: string | undefined;
-  let name: string | undefined;
-  let contentType: "json" | "multipart" | undefined;
-  let middlewares: string[] = [];
+  const descStr = description || `Enforces security policies or request transformations for ${name}`;
+  const tplConst = `/**
+ * middlewares/${name}/constants.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ * MIDDLEWARE CONTRACT & METADATA
+ */
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "--batch" && args[i + 1]) {
-      batchJson = args[++i];
-    } else if (arg === "--file" && args[i + 1]) {
-      filePath = args[++i];
-    } else if ((arg === "--ns" || arg === "--namespace") && args[i + 1]) {
-      namespace = args[++i];
-    } else if ((arg === "--name" || arg === "-n") && args[i + 1]) {
-      name = args[++i];
-    } else if (arg === "--contentType" && args[i + 1]) {
-      const ct = args[++i].toLowerCase();
-      contentType = ct.includes("multipart") ? "multipart" : "json";
-    } else if (arg === "--middlewares" && args[i + 1]) {
-      middlewares = args[++i].split(",").map((s) => s.trim()).filter(Boolean);
-    }
-  }
+import { Type } from "@sinclair/typebox";
 
-  if (filePath) {
-    const fileContent = fs.readFileSync(path.resolve(ROOT, filePath), "utf-8");
-    const parsed = JSON.parse(fileContent);
-    const batch = Array.isArray(parsed) ? parsed : [parsed];
-    return { isCli: true, batch };
-  }
+export const metadata = {
+  name: "${name}",
+  description: "${descStr}",
+};
 
-  if (batchJson) {
-    const parsed = JSON.parse(batchJson);
-    const batch = Array.isArray(parsed) ? parsed : [parsed];
-    return { isCli: true, batch };
-  }
+export const headersSchema = Type.Object({}, { additionalProperties: true });
 
-  if (namespace && name) {
-    return {
-      isCli: true,
-      single: {
-        namespace,
-        name,
-        contentType,
-        middlewares,
+export const optionsSchema = Type.Object({}, { additionalProperties: false });
+`;
+
+  const tplMRun = `/**
+ * middlewares/${name}/run.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ * MIDDLEWARE IMPLEMENTATION
+ */
+
+import type { MiddlewareFn } from "@cellsweb/rpc-core";
+import type { Static } from "@sinclair/typebox";
+import type { optionsSchema } from "./constants";
+
+type Options = Static<typeof optionsSchema>;
+
+export const run: MiddlewareFn<Options, { ${name}: string }> = async (
+  { headers, options, function: fn },
+  context,
+) => {
+  void headers;
+  void options;
+  void fn;
+
+  return {
+    ...context,
+    ${name}: "value",
+  };
+};
+`;
+
+  const tplMTest = `/**
+ * middlewares/${name}/test.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ * UNIT TEST FOR ${name} MIDDLEWARE
+ */
+
+import { describe, it, expect } from "vitest";
+import { run } from "./run";
+
+describe("middleware: ${name}", () => {
+  it("augments context successfully", async () => {
+    const initialContext = { requestId: "test-id", ip: "127.0.0.1" } as any;
+    const result = await run(
+      {
+        headers: {},
+        options: {},
+        function: {
+          key: "test.fn",
+          namespace: "test",
+          functionName: "fn",
+          metadata: {} as any,
+          contentType: "application/json",
+        },
       },
-    };
-  }
+      initialContext,
+    );
 
-  return { isCli: false };
-}
-
-async function main(): Promise<void> {
-  const cliArgs = parseCliArgs();
-
-  // ── 1. Batch or CLI Flags Mode (Non-interactive) ──
-  if (cliArgs.isCli) {
-    if (cliArgs.batch) {
-      console.log(`Scaffolding batch of ${cliArgs.batch.length} functions...`);
-      for (const item of cliArgs.batch) {
-        const fnDir = await scaffoldFunction(item);
-        const nsName = item.namespace || (item as any).ns;
-        const fName = item.name || (item as any).fn || (item as any).functionName;
-        console.log(`  ✔ Created: ${nsName}.${fName} -> ${path.relative(ROOT, fnDir)}`);
-      }
-      console.log("Batch function scaffolding complete.");
-      return;
-    }
-
-    if (cliArgs.single) {
-      const fnDir = await scaffoldFunction(cliArgs.single);
-      console.log(`✔ Created ${cliArgs.single.namespace}.${cliArgs.single.name} -> ${path.relative(ROOT, fnDir)}`);
-      return;
-    }
-  }
-
-  // ── 2. Interactive Mode (TTY) ──
-  console.clear();
-  p.intro("  Create Function ");
-
-  const existingNs = await getExistingNamespaces();
-  const nsOptions = [
-    ...existingNs.map((ns) => ({ value: ns, label: ns })),
-    { value: "__new__", label: "+ Create new namespace" },
-  ];
-
-  const nsPick = await p.select({
-    message: "Select namespace",
-    options: nsOptions,
+    expect(result.${name}).toBe("value");
   });
-  if (p.isCancel(nsPick)) { p.cancel("Cancelled."); process.exit(0); }
+});
+`;
 
-  let namespace: string;
-  if (nsPick === "__new__") {
-    const custom = await p.text({
-      message: "New namespace",
-      placeholder: "public  |  admin  |  admin.users",
-      validate: (v) => {
-        if (!v?.trim()) return "Required";
-        if (!namespaceRe.test(v.trim())) return 'Lowercase, dot-separated (e.g. "admin.users")';
-      },
-    });
-    if (p.isCancel(custom)) { p.cancel("Cancelled."); process.exit(0); }
-    namespace = (custom as string).trim();
-  } else {
-    namespace = nsPick as string;
-  }
+  fs.mkdirSync(mwDir, { recursive: true });
+  fs.writeFileSync(path.join(mwDir, "constants.ts"), tplConst);
+  fs.writeFileSync(path.join(mwDir, "run.ts"), tplMRun);
+  fs.writeFileSync(path.join(mwDir, "test.ts"), tplMTest);
 
-  const nsDir = path.join(FUNCTIONS_DIR, namespace.replace(/\./g, path.sep));
-  let functionName = "";
-
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const label = attempt === 0 ? "Function name" : `Function name (${MAX_RETRIES - attempt} attempt(s) left)`;
-    const raw = await p.text({
-      message: label,
-      placeholder: "getUserID  |  uploadAvatar",
-      validate: (v) => {
-        if (!v?.trim()) return "Required";
-        if (!identifierRe.test(v.trim())) return "Letters and numbers only, starting with a letter";
-      },
-    });
-    if (p.isCancel(raw)) { p.cancel("Cancelled."); process.exit(0); }
-
-    const name = (raw as string).trim();
-    if (fs.existsSync(path.join(nsDir, name))) {
-      const remaining = MAX_RETRIES - attempt - 1;
-      if (remaining === 0) {
-        p.log.error(`"${name}" already exists. Aborting.`);
-        process.exit(1);
-      }
-      p.log.warn(`"${namespace}.${name}" already exists. (${remaining} left)`);
-      continue;
-    }
-
-    functionName = name;
-    break;
-  }
-
-  const contentTypePick = await p.select({
-    message: "Input Content-Type",
-    options: [
-      { value: "application/json", label: "application/json (default)" },
-      { value: "multipart/form-data", label: "multipart/form-data (file upload)" },
-    ],
-  });
-  if (p.isCancel(contentTypePick)) { p.cancel("Cancelled."); process.exit(0); }
-  const isMultipart = contentTypePick === "multipart/form-data";
-
-  const available = getAvailableMiddlewares();
-  let selectedMws: string[] = [];
-
-  if (available.length > 0) {
-    const pick = await p.multiselect({
-      message: "Select middlewares",
-      options: available.map((mw) => ({ value: mw, label: mw })),
-      required: false,
-    });
-    if (p.isCancel(pick)) { p.cancel("Cancelled."); process.exit(0); }
-    selectedMws = pick as string[];
-  }
-
-  const fnDir = path.join(nsDir, functionName);
-  const spin = p.spinner();
-  spin.start("Writing files…");
-
-  try {
-    await scaffoldFunction({
-      namespace,
-      name: functionName,
-      contentType: isMultipart ? "multipart" : "json",
-      middlewares: selectedMws,
-    });
-    spin.stop("Done");
-  } catch (err) {
-    spin.stop("Failed");
-    p.log.error((err as Error).message);
-    process.exit(1);
-  }
-
-  const rel = path.relative(ROOT, fnDir);
-  p.note(`📁 ${rel}/\n   constants.ts\n   run.ts\n   test.ts${selectedMws.length > 0 ? "\n   middlewares.ts" : ""}`, "Created");
-  p.outro(`${namespace}.${functionName} ready.`);
-}
-
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""))) {
-  main().catch((e) => { console.error(e); process.exit(1); });
+  return mwDir;
 }

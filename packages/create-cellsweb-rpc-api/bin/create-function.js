@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 /**
- * scripts/create-function.ts
+ * bin/create-function.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Scaffolds a new API function with constants, run, optional middlewares, and comprehensive audit test files.
+ * Built-in CellsWeb RPC function generator.
+ * Scaffolds a new API function with constants, run, optional middlewares, and tests.
  *
  * SUPPORTED MODES:
  *  1. Interactive Mode (Default in TTY):
- *     pnpm create:function
+ *     crpc create:function
  *
  *  2. Single CLI Flag Mode (Non-interactive for AI Coders & Devs):
- *     pnpm create:function --ns admin.products --name create --contentType json --middlewares auth,rateLimit
+ *     crpc create:function --ns admin.products --name create --contentType json --middlewares auth,rateLimit
  *
  *  3. Batch Mode (Scaffold multiple functions in one command):
- *     pnpm create:function --batch '[{"ns":"admin.products","name":"create","middlewares":["auth"]},{"ns":"admin.products","name":"delete"}]'
- *     pnpm create:function --file specs/functions.json
+ *     crpc create:function --batch '[{"ns":"admin.products","name":"create","middlewares":["auth"]}]'
+ *     crpc create:function --file specs/functions.json
  */
 
 import * as p from "@clack/prompts";
@@ -23,18 +24,65 @@ import { glob } from "tinyglobby";
 
 const MAX_RETRIES = 5;
 const ROOT = process.cwd();
-const FUNCTIONS_DIR = path.join(ROOT, "src", "functions");
-const MIDDLEWARES_DIR = path.join(ROOT, "src", "middlewares");
 
-export interface ScaffoldFunctionOptions {
-  namespace: string;
-  name: string;
-  contentType?: "application/json" | "multipart/form-data" | "json" | "multipart";
-  middlewares?: string[];
-  description?: string;
+export function detectConfiguredDirs(rootDir = process.cwd()) {
+  let functionsDir = null;
+  let middlewaresDir = null;
+
+  if (process.env.RPC_FUNCTIONS_DIR) functionsDir = process.env.RPC_FUNCTIONS_DIR;
+  if (process.env.RPC_MIDDLEWARES_DIR) middlewaresDir = process.env.RPC_MIDDLEWARES_DIR;
+
+  if (!functionsDir || !middlewaresDir) {
+    const pkgPath = path.join(rootDir, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+        if (!functionsDir && pkg.crpc?.functionsDir) functionsDir = pkg.crpc.functionsDir;
+        if (!middlewaresDir && pkg.crpc?.middlewaresDir) middlewaresDir = pkg.crpc.middlewaresDir;
+      } catch {}
+    }
+  }
+
+  if (!functionsDir || !middlewaresDir) {
+    const candidates = [
+      "src/server.ts",
+      "src/index.ts",
+      "src/app.ts",
+      "src/main.ts",
+      "server.ts",
+      "index.ts",
+      "app.ts",
+    ];
+    for (const file of candidates) {
+      const fullPath = path.join(rootDir, file);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const content = fs.readFileSync(fullPath, "utf-8");
+          if (!functionsDir) {
+            const fnMatch = content.match(/functionsDir\s*:\s*["']([^"']+)["']/);
+            if (fnMatch) functionsDir = fnMatch[1];
+          }
+          if (!middlewaresDir) {
+            const mwMatch = content.match(/middlewaresDir\s*:\s*["']([^"']+)["']/);
+            if (mwMatch) middlewaresDir = mwMatch[1];
+          }
+          if (functionsDir && middlewaresDir) break;
+        } catch {}
+      }
+    }
+  }
+
+  return {
+    functionsDir: path.resolve(rootDir, functionsDir || "src/functions"),
+    middlewaresDir: path.resolve(rootDir, middlewaresDir || "src/middlewares"),
+  };
 }
 
-export async function getExistingNamespaces(): Promise<string[]> {
+const configuredDirs = detectConfiguredDirs(ROOT);
+const FUNCTIONS_DIR = configuredDirs.functionsDir;
+const MIDDLEWARES_DIR = configuredDirs.middlewaresDir;
+
+export async function getExistingNamespaces() {
   if (!fs.existsSync(FUNCTIONS_DIR)) return [];
 
   const runFiles = await glob("**/run.ts", {
@@ -43,7 +91,7 @@ export async function getExistingNamespaces(): Promise<string[]> {
     ignore: ["**/*.spec.ts", "**/__tests__/**"],
   });
 
-  const namespaces = new Set<string>();
+  const namespaces = new Set();
   for (const f of runFiles) {
     const parts = f.split("/");
     if (parts.length < 3) continue;
@@ -54,7 +102,7 @@ export async function getExistingNamespaces(): Promise<string[]> {
   return Array.from(namespaces).sort();
 }
 
-export function getAvailableMiddlewares(): string[] {
+export function getAvailableMiddlewares() {
   if (!fs.existsSync(MIDDLEWARES_DIR)) return [];
   return fs
     .readdirSync(MIDDLEWARES_DIR, { withFileTypes: true })
@@ -66,7 +114,7 @@ export function getAvailableMiddlewares(): string[] {
 const identifierRe = /^[a-zA-Z][a-zA-Z0-9]*$/;
 const namespaceRe = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$/;
 
-function tplConstants(ns: string, fn: string, isMultipart: boolean, desc?: string): string {
+function tplConstants(ns, fn, isMultipart, desc) {
   const nsPath = ns.replace(/\./g, "/");
   const descriptionStr = desc || `TODO: describe ${fn}`;
 
@@ -154,7 +202,7 @@ export const outputSchema = Type.Object({
 `;
 }
 
-function tplRun(ns: string, fn: string, isMultipart: boolean, mws: string[]): string {
+function tplRun(ns, fn, isMultipart, mws) {
   const nsPath = ns.replace(/\./g, "/");
   let contextTypeStr = "MiddlewareContext";
   let importContextStr = 'import type { MiddlewareContext } from "@cellsweb/rpc-core";';
@@ -237,7 +285,7 @@ export const run = async (
 `;
 }
 
-function tplMiddlewares(ns: string, fn: string, mws: string[]): string {
+function tplMiddlewares(ns, fn, mws) {
   const nsPath = ns.replace(/\./g, "/");
   const entries = mws
     .map((mw) => {
@@ -267,8 +315,9 @@ ${entries}
 `;
 }
 
-function tplTest(ns: string, fn: string, isMultipart: boolean): string {
+function tplTest(ns, fn, isMultipart, mws = []) {
   const nsPath = ns.replace(/\./g, "/");
+  const hasAuth = mws.includes("auth");
 
   if (isMultipart) {
     return `/**
@@ -349,7 +398,7 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
 
     it("enforces security guards and blocks unprivileged access", async () => {
-      if (!metadata.isPublic) {
+      if (${hasAuth}) {
         const guestActor = await createTestActor({ role: "unprivileged_guest" });
         const res = await guestActor.callRaw("${ns}.${fn}", { title: "Unauthorized Attempt" });
         expect(res.status).toBe("error");
@@ -432,7 +481,7 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
     });
 
     it("enforces security guards and blocks unprivileged access", async () => {
-      if (!metadata.isPublic) {
+      if (${hasAuth}) {
         const guestActor = await createTestActor({ role: "unprivileged_guest" });
         const res = await guestActor.callRaw("${ns}.${fn}", { example: "Unauthorized attempt" });
         expect(res.status).toBe("error");
@@ -455,28 +504,27 @@ describe("RPC Security & Execution Audit: ${ns}.${fn}", () => {
 /**
  * Programmatic function scaffolder.
  */
-export async function scaffoldFunction(
-  options: ScaffoldFunctionOptions | Record<string, any>,
-): Promise<string> {
-  const namespace = options.namespace || (options as any).ns;
-  const name = options.name || (options as any).fn || (options as any).functionName;
+export async function scaffoldFunction(options) {
+  const namespace = options.namespace || options.ns;
+  const name = options.name || options.fn || options.functionName;
   if (!namespace || !name) {
     throw new Error(`Both namespace and name are required. Received: ${JSON.stringify(options)}`);
   }
 
   const middlewares = options.middlewares || [];
   const description = options.description;
-  const contentType = options.contentType || (options as any).type;
+  const contentType = options.contentType || options.type;
   const isMultipart =
     contentType === "multipart/form-data" || contentType === "multipart";
 
-  const nsDir = path.join(FUNCTIONS_DIR, namespace.replace(/\./g, path.sep));
+  const targetDir = options.targetDir || FUNCTIONS_DIR;
+  const nsDir = path.join(targetDir, namespace.replace(/\./g, path.sep));
   const fnDir = path.join(nsDir, name);
 
   fs.mkdirSync(fnDir, { recursive: true });
   fs.writeFileSync(path.join(fnDir, "constants.ts"), tplConstants(namespace, name, isMultipart, description));
   fs.writeFileSync(path.join(fnDir, "run.ts"), tplRun(namespace, name, isMultipart, middlewares));
-  fs.writeFileSync(path.join(fnDir, "test.ts"), tplTest(namespace, name, isMultipart));
+  fs.writeFileSync(path.join(fnDir, "test.ts"), tplTest(namespace, name, isMultipart, middlewares));
 
   if (middlewares.length > 0) {
     fs.writeFileSync(path.join(fnDir, "middlewares.ts"), tplMiddlewares(namespace, name, middlewares));
@@ -485,20 +533,17 @@ export async function scaffoldFunction(
   return fnDir;
 }
 
-function parseCliArgs(): {
-  isCli: boolean;
-  batch?: ScaffoldFunctionOptions[];
-  single?: ScaffoldFunctionOptions;
-} {
+function parseCliArgs() {
   const args = process.argv.slice(2);
   if (args.length === 0) return { isCli: false };
 
-  let batchJson: string | undefined;
-  let filePath: string | undefined;
-  let namespace: string | undefined;
-  let name: string | undefined;
-  let contentType: "json" | "multipart" | undefined;
-  let middlewares: string[] = [];
+  let batchJson;
+  let filePath;
+  let namespace;
+  let name;
+  let contentType;
+  let middlewares = [];
+  let targetDir = FUNCTIONS_DIR;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -515,19 +560,23 @@ function parseCliArgs(): {
       contentType = ct.includes("multipart") ? "multipart" : "json";
     } else if (arg === "--middlewares" && args[i + 1]) {
       middlewares = args[++i].split(",").map((s) => s.trim()).filter(Boolean);
+    } else if ((arg === "--functionsDir" || arg === "--dir") && args[i + 1]) {
+      targetDir = path.resolve(ROOT, args[++i]);
     }
   }
 
   if (filePath) {
     const fileContent = fs.readFileSync(path.resolve(ROOT, filePath), "utf-8");
     const parsed = JSON.parse(fileContent);
-    const batch = Array.isArray(parsed) ? parsed : [parsed];
+    const list = Array.isArray(parsed) ? parsed : [parsed];
+    const batch = list.map((item) => (targetDir ? { targetDir, ...item } : item));
     return { isCli: true, batch };
   }
 
   if (batchJson) {
     const parsed = JSON.parse(batchJson);
-    const batch = Array.isArray(parsed) ? parsed : [parsed];
+    const list = Array.isArray(parsed) ? parsed : [parsed];
+    const batch = list.map((item) => (targetDir ? { targetDir, ...item } : item));
     return { isCli: true, batch };
   }
 
@@ -539,6 +588,7 @@ function parseCliArgs(): {
         name,
         contentType,
         middlewares,
+        targetDir,
       },
     };
   }
@@ -546,7 +596,7 @@ function parseCliArgs(): {
   return { isCli: false };
 }
 
-async function main(): Promise<void> {
+async function main() {
   const cliArgs = parseCliArgs();
 
   // ── 1. Batch or CLI Flags Mode (Non-interactive) ──
@@ -555,8 +605,8 @@ async function main(): Promise<void> {
       console.log(`Scaffolding batch of ${cliArgs.batch.length} functions...`);
       for (const item of cliArgs.batch) {
         const fnDir = await scaffoldFunction(item);
-        const nsName = item.namespace || (item as any).ns;
-        const fName = item.name || (item as any).fn || (item as any).functionName;
+        const nsName = item.namespace || item.ns;
+        const fName = item.name || item.fn || item.functionName;
         console.log(`  ✔ Created: ${nsName}.${fName} -> ${path.relative(ROOT, fnDir)}`);
       }
       console.log("Batch function scaffolding complete.");
@@ -586,7 +636,7 @@ async function main(): Promise<void> {
   });
   if (p.isCancel(nsPick)) { p.cancel("Cancelled."); process.exit(0); }
 
-  let namespace: string;
+  let namespace;
   if (nsPick === "__new__") {
     const custom = await p.text({
       message: "New namespace",
@@ -597,9 +647,9 @@ async function main(): Promise<void> {
       },
     });
     if (p.isCancel(custom)) { p.cancel("Cancelled."); process.exit(0); }
-    namespace = (custom as string).trim();
+    namespace = custom.trim();
   } else {
-    namespace = nsPick as string;
+    namespace = nsPick;
   }
 
   const nsDir = path.join(FUNCTIONS_DIR, namespace.replace(/\./g, path.sep));
@@ -617,7 +667,7 @@ async function main(): Promise<void> {
     });
     if (p.isCancel(raw)) { p.cancel("Cancelled."); process.exit(0); }
 
-    const name = (raw as string).trim();
+    const name = raw.trim();
     if (fs.existsSync(path.join(nsDir, name))) {
       const remaining = MAX_RETRIES - attempt - 1;
       if (remaining === 0) {
@@ -643,7 +693,7 @@ async function main(): Promise<void> {
   const isMultipart = contentTypePick === "multipart/form-data";
 
   const available = getAvailableMiddlewares();
-  let selectedMws: string[] = [];
+  let selectedMws = [];
 
   if (available.length > 0) {
     const pick = await p.multiselect({
@@ -652,7 +702,7 @@ async function main(): Promise<void> {
       required: false,
     });
     if (p.isCancel(pick)) { p.cancel("Cancelled."); process.exit(0); }
-    selectedMws = pick as string[];
+    selectedMws = pick;
   }
 
   const fnDir = path.join(nsDir, functionName);
@@ -669,7 +719,7 @@ async function main(): Promise<void> {
     spin.stop("Done");
   } catch (err) {
     spin.stop("Failed");
-    p.log.error((err as Error).message);
+    p.log.error(err.message);
     process.exit(1);
   }
 
