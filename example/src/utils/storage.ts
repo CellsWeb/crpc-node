@@ -61,13 +61,21 @@ export const storage = {
     }
 
     // Local mode
-    const uploadDir = path.resolve(process.cwd(), env.UPLOAD_DIR ?? "public/uploads", subDir);
-    await fs.promises.mkdir(uploadDir, { recursive: true });
-    const filePath = path.join(uploadDir, uniqueFileName);
+    const uploadRoot = path.resolve(process.cwd(), env.UPLOAD_DIR ?? "public/uploads");
+    const rootWithSep = uploadRoot.endsWith(path.sep) ? uploadRoot : uploadRoot + path.sep;
+    const cleanSubDir = subDir.replace(/\.\./g, "").replace(/^\/+/, "");
+    const targetDir = path.resolve(uploadRoot, cleanSubDir);
+
+    if (!targetDir.startsWith(rootWithSep) && targetDir !== uploadRoot) {
+      throw new Error("Security Violation: Path traversal detected in upload directory");
+    }
+
+    await fs.promises.mkdir(targetDir, { recursive: true });
+    const filePath = path.join(targetDir, uniqueFileName);
 
     await fs.promises.writeFile(filePath, buffer);
 
-    const relativeUrlPath = path.join("/uploads", subDir, uniqueFileName).replace(/\\/g, "/");
+    const relativeUrlPath = path.join("/uploads", cleanSubDir, uniqueFileName).replace(/\\/g, "/");
     const url = `${env.SERVER_URL}${relativeUrlPath}`;
 
     return { url, path: filePath };

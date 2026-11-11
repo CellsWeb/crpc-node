@@ -187,6 +187,7 @@ export async function buildRegistry(options: {
           try {
             constantsMod = await import(toImportUrl(constantsPath));
           } catch (cErr) {
+            logSystemError(`Failed to load middleware constants from ${constantsPath}`, cErr);
             if (strict) throw cErr;
           }
         }
@@ -254,6 +255,7 @@ export async function buildRegistry(options: {
           try {
             constantsMod = await import(toImportUrl(constantsPath));
           } catch (cErr) {
+            logSystemError(`Failed to load constants from ${constantsPath}`, cErr);
             if (strict) throw cErr;
           }
         }
@@ -273,6 +275,7 @@ export async function buildRegistry(options: {
           try {
             middlewaresMod = await import(toImportUrl(middlewaresPath));
           } catch (mErr) {
+            logSystemError(`Failed to load middlewares from ${middlewaresPath}`, mErr);
             if (strict) throw mErr;
           }
         }

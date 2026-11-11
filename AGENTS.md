@@ -348,6 +348,24 @@ This section documents the specific problems, design decisions, and solutions es
 - **Symptom**: While `busboy` in `multipart.ts` capped fields at 100 and files at 20, Web Standards `parseWebRequest` in `web.ts` only checked byte bounds, exposing the fetch pipeline to field flooding and file descriptor exhaustion.
 - **Solution**: Enforced strict stream bounds in `web.ts` (`MAX_PARTS: 150`, `MAX_FIELDS: 100`, `MAX_FIELD_SIZE: 1MB`, `MAX_FILES: 20`) with automatic temp file cleanup on abort.
 
+### Gotcha 47: Directory Traversal Vulnerability in `localUpload()` Storage Utility
+- **Symptom**: The `localUpload(buffer, name, dir)` function in `create-cellsweb-rpc-api` template and `example` sanitized `filename` via `sanitizeFilename()`, but accepted `dir` directly from callers without checking root directory boundaries. A maliciously formatted or user-influenced subpath (such as `../../../../etc`) could escape `UPLOAD_DIR`.
+- **Solution**: Added strict path resolution and root boundary check in `packages/create-cellsweb-rpc-api/template/src/utils/storage.ts` and `example/src/utils/storage.ts`:
+  ```ts
+  const uploadRoot = path.resolve(getUploadRoot());
+  const rootWithSep = uploadRoot.endsWith(path.sep) ? uploadRoot : uploadRoot + path.sep;
+  const cleanDir = cleanStoragePath(dir).replace(/\.\./g, "").replace(/^\/+/, "");
+  const targetDir = path.resolve(uploadRoot, cleanDir);
+
+  if (!targetDir.startsWith(rootWithSep) && targetDir !== uploadRoot) {
+    throw new Error("Security Violation: Path traversal detected in upload directory");
+  }
+  ```
+
+### Gotcha 48: Silent Module Import Swallowing During Dev Registry Discovery
+- **Symptom**: If an error occurred inside a function's `constants.ts` or `middlewares.ts` (e.g., missing package or syntax error), the registry loader caught the exception and silently skipped the file when `strict: false`, causing the endpoint to fall back to `application/json` or omit middlewares with zero feedback in dev mode.
+- **Solution**: Added `logSystemError()` in `packages/rpc-core/src/registry.ts` whenever `constants.ts` or `middlewares.ts` fails to import, ensuring developers immediately see the exact module error in their terminal logs.
+
 ---
 
 ## 🛠 6. Operational Guide for AI Agents

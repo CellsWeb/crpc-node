@@ -136,16 +136,24 @@ async function localUpload(
   originalName: string,
   dir: string = "",
 ): Promise<UploadResult> {
-  const uploadRoot = getUploadRoot();
-  const safeName = sanitizeFilename(originalName);
-  const relDir = dir.replace(/^\/+/, "");
-  const savePath = path.join(uploadRoot, relDir, safeName);
-  const dirPath = path.dirname(savePath);
+  const uploadRoot = path.resolve(getUploadRoot());
+  const rootWithSep = uploadRoot.endsWith(path.sep) ? uploadRoot : uploadRoot + path.sep;
 
-  await fs.mkdir(dirPath, { recursive: true });
+  // Security: prevent directory traversal in target directory
+  const cleanDir = cleanStoragePath(dir).replace(/\.\./g, "").replace(/^\/+/, "");
+  const targetDir = path.resolve(uploadRoot, cleanDir);
+
+  if (!targetDir.startsWith(rootWithSep) && targetDir !== uploadRoot) {
+    throw new Error("Security Violation: Path traversal detected in upload directory");
+  }
+
+  const safeName = sanitizeFilename(originalName);
+  const savePath = path.join(targetDir, safeName);
+
+  await fs.mkdir(targetDir, { recursive: true });
   await fs.writeFile(savePath, buffer);
 
-  const relativePath = relDir ? `${relDir}/${safeName}` : safeName;
+  const relativePath = cleanDir ? `${cleanDir}/${safeName}` : safeName;
   const normalizedRelPath = relativePath.replace(/\\/g, "/");
   const relUrl = `uploads/${normalizedRelPath}`;
 
