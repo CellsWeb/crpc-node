@@ -137,7 +137,11 @@ export class CoreRPC {
         options.port ??
         (process.env.API_PORT ? Number(process.env.API_PORT) : 4000),
       host: options.host ?? process.env.API_HOST ?? "0.0.0.0",
-      docs: options.docs ?? true,
+      docs:
+        options.docs ??
+        (process.env.NODE_ENV === "production"
+          ? process.env.API_DOCS_ENABLED === "true"
+          : true),
       rpcEndpoint: normalizeEndpoint(rawRpc),
       docsEndpoint: normalizeEndpoint(rawDocs),
       healthEndpoint: normalizeEndpoint(rawHealth),
@@ -220,7 +224,7 @@ export class CoreRPC {
     return this.registryInstance;
   }
 
-  public async createHandler(): Promise<RequestListener> {
+  public async createHandler(): Promise<(req: IncomingMessage | any, res: ServerResponse | any, next?: any) => Promise<void>> {
     const registry = await this.getRegistry();
 
     return async (
@@ -278,6 +282,8 @@ export class CoreRPC {
         rawRes.statusCode = 200;
         if (typeof rawRes.setHeader === "function") {
           rawRes.setHeader("Content-Type", "application/json");
+          rawRes.setHeader("X-Content-Type-Options", "nosniff");
+          rawRes.setHeader("X-Frame-Options", "DENY");
         }
         rawRes.end(
           JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }),
@@ -304,6 +310,8 @@ export class CoreRPC {
         rawRes.statusCode = 200;
         if (typeof rawRes.setHeader === "function") {
           rawRes.setHeader("Content-Type", "text/html; charset=utf-8");
+          rawRes.setHeader("X-Content-Type-Options", "nosniff");
+          rawRes.setHeader("X-Frame-Options", "SAMEORIGIN");
         }
         rawRes.end(html);
         return;
@@ -316,6 +324,8 @@ export class CoreRPC {
       rawRes.statusCode = 404;
       if (typeof rawRes.setHeader === "function") {
         rawRes.setHeader("Content-Type", "application/json");
+        rawRes.setHeader("X-Content-Type-Options", "nosniff");
+        rawRes.setHeader("X-Frame-Options", "DENY");
       }
       rawRes.end(
         JSON.stringify({
@@ -486,6 +496,8 @@ export class CoreRPC {
           status: 200,
           headers: {
             "Content-Type": "application/json",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
             ...corsHeaders,
           },
         },
@@ -505,6 +517,8 @@ export class CoreRPC {
         status: 200,
         headers: {
           "Content-Type": "text/html; charset=utf-8",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "SAMEORIGIN",
           ...corsHeaders,
         },
       });
@@ -520,6 +534,8 @@ export class CoreRPC {
         status: 404,
         headers: {
           "Content-Type": "application/json",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "DENY",
           ...corsHeaders,
         },
       },

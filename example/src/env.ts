@@ -13,6 +13,7 @@ export const EnvSchema = Type.Object({
   API_HOST: Type.Optional(Type.String({ default: "0.0.0.0" })),
   API_REQUEST_TIMEOUT_MS: Type.Optional(Type.Number({ default: 30000 })),
   API_LOG_LEVEL: Type.Optional(Type.String({ default: "info" })),
+  API_DOCS_ENABLED: Type.Optional(Type.Boolean({ default: false })),
 
   MAX_JSON_BODY_BYTES: Type.Optional(Type.Number({ default: 1_048_576 })),
   MAX_MULTIPART_BYTES: Type.Optional(Type.Number({ default: 25_000_000 })),
@@ -66,9 +67,12 @@ function parseEnv(): Env {
   raw.UPLOAD_MODE ??= "local";
   raw.UPLOAD_DIR ??= "public/uploads";
   raw.SERVER_URL ??= "http://localhost:4000";
+  raw.API_DOCS_ENABLED = booleanFromEnv(raw.API_DOCS_ENABLED, false);
   raw.TELEMETRY_ENABLED = booleanFromEnv(raw.TELEMETRY_ENABLED, true);
 
-  const withDefaults = Value.Default(EnvSchema, raw);
+  const withDefaults = (Value as any).Default
+    ? (Value as any).Default(EnvSchema, raw)
+    : Value.Cast(EnvSchema, raw);
 
   if (!Value.Check(EnvSchema, withDefaults)) {
     const errors = [...Value.Errors(EnvSchema, withDefaults)];

@@ -79,6 +79,9 @@ export async function handleWebRpcRequest(
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "X-Request-Id": requestId,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
         ...(options.corsHeaders ?? {}),
       },
     });
@@ -101,6 +104,9 @@ export async function handleWebRpcRequest(
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "X-Request-Id": requestId,
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
         ...(options.corsHeaders ?? {}),
       },
     });

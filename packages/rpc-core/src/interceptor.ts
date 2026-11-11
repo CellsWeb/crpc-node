@@ -79,6 +79,9 @@ export async function handleApiRequest(
       if (typeof responseObj.setHeader === "function") {
         responseObj.setHeader("Content-Type", "application/json; charset=utf-8");
         responseObj.setHeader("X-Request-Id", requestId);
+        responseObj.setHeader("X-Content-Type-Options", "nosniff");
+        responseObj.setHeader("X-Frame-Options", "DENY");
+        responseObj.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
       }
     }
     if (!responseObj.writableEnded) {
@@ -103,6 +106,9 @@ export async function handleApiRequest(
       if (typeof responseObj.setHeader === "function") {
         responseObj.setHeader("Content-Type", "application/json; charset=utf-8");
         responseObj.setHeader("X-Request-Id", requestId);
+        responseObj.setHeader("X-Content-Type-Options", "nosniff");
+        responseObj.setHeader("X-Frame-Options", "DENY");
+        responseObj.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
       }
     }
     if (!responseObj.writableEnded) {

@@ -258,7 +258,7 @@ describe("Security & Robustness Probes", () => {
         nextCalled = true;
       };
 
-      await handler(mockReq as any, mockRes as any, next);
+      await (handler as any)(mockReq, mockRes, next);
       expect(nextCalled).toBe(true);
     });
   });
@@ -543,11 +543,12 @@ describe("Security & Robustness Probes", () => {
       });
 
       const parsed = await parseWebRequest(req);
-      expect(parsed.data.safeKey).toBe("safeValue");
-      expect((parsed.data as any).__proto__).toBeUndefined();
+      const parsedData = parsed.data as Record<string, any>;
+      expect(parsedData.safeKey).toBe("safeValue");
+      expect(parsedData.__proto__).toBeUndefined();
       expect((Object.prototype as any).polluted).toBeUndefined();
-      expect(parsed.data.constructor).toBeUndefined();
-      expect(parsed.data.prototype).toBeUndefined();
+      expect(parsedData.constructor).toBeUndefined();
+      expect(parsedData.prototype).toBeUndefined();
     });
   });
 
@@ -593,6 +594,18 @@ describe("Security & Robustness Probes", () => {
 
       await app.close();
       await fs.rm(tempDir, { recursive: true, force: true });
+    });
+  });
+
+  describe("12. Enterprise & Government Security Headers", () => {
+    it("injects OWASP security headers (nosniff, frame-options, referrer-policy) on RPC and health responses", async () => {
+      const app = new CoreRPC();
+      const res = await app.fetch(
+        new Request("http://localhost:4000/health", { method: "GET" }),
+      );
+
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(res.headers.get("x-frame-options")).toBe("DENY");
     });
   });
 });

@@ -14,7 +14,7 @@ export const app = new CoreRPC({
   middlewaresDir: "./src/middlewares",
   port: env.API_PORT,
   host: env.API_HOST,
-  docs: true,
+  docs: env.NODE_ENV !== "production" || env.API_DOCS_ENABLED === true,
 });
 
 const rpcHandler = await app.createHandler();
@@ -28,7 +28,10 @@ export const server = http.createServer(async (req, res) => {
     const filePath = decodeURIComponent(url.replace(/^\/uploads\//, ""));
     const result = await storage.serve(filePath);
     if (!result) {
-      res.writeHead(404, { "Content-Type": "application/json" });
+      res.writeHead(404, {
+        "Content-Type": "application/json",
+        "X-Content-Type-Options": "nosniff",
+      });
       res.end(
         JSON.stringify({
           status: "error",
@@ -41,6 +44,7 @@ export const server = http.createServer(async (req, res) => {
     res.writeHead(200, {
       "Content-Type": result.mimeType,
       "Cache-Control": "public, max-age=86400",
+      "X-Content-Type-Options": "nosniff",
     });
     res.end(result.buffer);
     return;
@@ -49,6 +53,35 @@ export const server = http.createServer(async (req, res) => {
   // ── Core RPC Engine Handler (Handles /rpc, /docs, /health) ──
   await rpcHandler(req, res);
 });
+
+// Graceful shutdown handler for container environments (K8s, Docker, Cloud Run)
+const handleGracefulShutdown = (signal: string) => {
+  console.log(`Received ${signal}, initiating graceful shutdown...`);
+  if (typeof (server as any).closeIdleConnections === "function") {
+    (server as any).closeIdleConnections();
+  }
+  server.close(async () => {
+    try {
+      await app.close();
+      console.log("Server and background workers shut down cleanly.");
+      process.exit(0);
+    } catch (err) {
+      console.error("Error during graceful shutdown cleanup:", err);
+      process.exit(1);
+    }
+  });
+
+  // Force termination if connections fail to drain within 10s
+  setTimeout(() => {
+    console.error("Graceful shutdown timed out after 10s. Forcing exit.");
+    process.exit(1);
+  }, 10000).unref();
+};
+
+if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+  process.once("SIGTERM", () => handleGracefulShutdown("SIGTERM"));
+  process.once("SIGINT", () => handleGracefulShutdown("SIGINT"));
+}
 
 // Only start HTTP listener if not running inside test environment (Vitest)
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
