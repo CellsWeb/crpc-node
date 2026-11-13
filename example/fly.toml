@@ -1,0 +1,43 @@
+# fly.toml app configuration file for CellsWeb RPC Node.js Engine
+# Request-based autoscaling on Fly.io
+
+app = "cellsweb-rpc-node-api"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  API_PORT = "4000"
+  API_HOST = "0.0.0.0"
+  SERVER_URL = "https://cellsweb-rpc-node-api.fly.dev"
+  UPLOAD_DIR = "public/uploads"
+  UPLOAD_MODE = "local"
+  TELEMETRY_ENABLED = "true"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # Concurrency limits for Node.js event loop
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 300    # Node single-thread queue soft limit
+    hard_limit = 600    # Hard limit diverting traffic to spun-up machines
+
+  [[http_service.checks]]
+    interval = "10s"
+    timeout = "2s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/health"
+
+# Sizing configuration: 1 shared CPU core, 512MB RAM (recommended for Node.js)
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
