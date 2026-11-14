@@ -1,0 +1,73 @@
+site_name: CellsWeb RPC Node
+site_description: High-Performance RPC API Framework for Node.js, Bun & TypeScript
+site_author: CellsWeb
+site_url: https://cellsweb.github.io/crpc-node/
+
+repo_name: CellsWeb/crpc-node
+repo_url: https://github.com/CellsWeb/crpc-node
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    # Palette toggle for light mode
+    - scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - attr_list
+  - md_in_html
+
+nav:
+  - Overview:
+      - Introduction: index.md
+      - Getting Started: getting-started.md
+      - Architecture & Protocol: architecture.md
+  - Core Guides:
+      - Functions & Contracts: functions.md
+      - Middlewares & Pipeline: middlewares.md
+      - Multi-Threading (Workers): workers.md
+      - Framework Adapters: adapters.md
+  - Client SDK & React:
+      - Universal Client & Hooks: client.md
+      - File Uploads & Multipart: uploads.md
+  - Tooling & Operations:
+      - CLI & AI Scaffolding: cli.md
+      - Testing & Security Audits: testing.md
+      - Package Reference: api-reference.md
+      - Go Engine Sibling: crpc-go.md
