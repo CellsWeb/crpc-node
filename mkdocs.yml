@@ -56,6 +56,7 @@ nav:
   - Overview:
       - Introduction: index.md
       - Getting Started: getting-started.md
+      - Benchmarks & Comparison: benchmarks.md
       - Architecture & Protocol: architecture.md
   - Core Guides:
       - Functions & Contracts: functions.md
@@ -69,6 +70,5 @@ nav:
   - Tooling & Operations:
       - CLI & AI Scaffolding: cli.md
       - Testing & Security Audits: testing.md
-      - Multi-Engine Benchmarks: benchmarks.md
       - Package Reference: api-reference.md
       - Go Engine Sibling: crpc-go.md

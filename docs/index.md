@@ -46,6 +46,21 @@ nav_order: 1
 
 ---
 
+## ⚖️ CellsWeb RPC vs Connect-RPC vs tRPC vs Twirp
+
+| Capability / Feature | CellsWeb RPC (`crpc`) | Connect-RPC | tRPC | Twirp |
+| :--- | :--- | :--- | :--- | :--- |
+| **Go & TypeScript Parity** | **Yes** (100% interoperable wire format) | Yes (via Protobuf) | No (TypeScript/JS only) | Yes (via Protobuf) |
+| **Zero-Codegen Client** | **Yes** (Dynamic client SDK, no build step) | No (Requires `buf generate`) | Yes (TypeScript types only) | No (Requires `protoc`) |
+| **Single Endpoint (`/rpc`)** | **Yes** (Unified routing & proxy configuration) | No (Endpoint per RPC method) | No (Endpoint per procedure) | No (Endpoint per method) |
+| **Zero-Config Live Docs UI** | **Yes** (Server-rendered dark theme `/docs`) | No (Requires third-party tools) | No (Third-party OpenAPI) | No |
+| **Multipart File Streaming** | **Yes** (Streaming intake, Web & RN objects) | Complex (bytes in proto payload) | Complex (Custom FormData) | Complex (bytes in proto) |
+| **In-Process Testing Engine** | **Yes** (`createTestCaller` / zero socket) | No (Requires network listener) | Yes (caller) | No (Network listener) |
+| **Dual HTTP Status Mode** | **Yes** (Uniform 200 or standard APM codes) | No (gRPC status codes) | No (HTTP error codes) | No (HTTP error codes) |
+| **Worker Multi-Threading** | **Yes** (Declarative `worker = true;`) | No | No | No |
+
+---
+
 ## 📦 Workspace Monorepo Packages
 
 This repository contains three tightly integrated packages:
@@ -69,6 +84,7 @@ crpc-node/
 - **Overview**
   - [Introduction](./index.md)
   - [Getting Started](./getting-started.md)
+  - [Multi-Engine Benchmarks & Comparison Matrix](./benchmarks.md)
   - [Architecture & Protocol](./architecture.md)
 - **Core Guides**
   - [Writing Functions & Contracts](./functions.md)
