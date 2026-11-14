@@ -69,16 +69,16 @@ export default async function run(data: Input, ctx: Context): Promise<Output> {
 
 ```mermaid
 flowchart TD
-    Client[Incoming Client Request] --> MainThread[Node.js Main Event Loop]
-    MainThread --> Check{worker === true?}
-    Check -- No --> AsyncExec[Execute on Main Event Loop]
-    Check -- Yes --> Queue[Worker Task Queue]
-    Queue --> Pool[Pre-warmed Worker Pool]
-    Pool --> Worker1[Worker Thread 1]
-    Pool --> Worker2[Worker Thread 2]
-    Pool --> WorkerN[Worker Thread N]
-    Worker1 --> Result[Marshal Result back via postMessage]
-    Result --> Response[HTTP 200 Response to Client]
+    Client["Incoming Client Request"] --> MainThread["Node.js Main Event Loop"]
+    MainThread --> Check{"worker === true?"}
+    Check -- No --> AsyncExec["Execute on Main Event Loop"]
+    Check -- Yes --> Queue["Worker Task Queue"]
+    Queue --> Pool["Pre-warmed Worker Pool"]
+    Pool --> Worker1["Worker Thread 1"]
+    Pool --> Worker2["Worker Thread 2"]
+    Pool --> WorkerN["Worker Thread N"]
+    Worker1 --> Result["Marshal Result back via postMessage"]
+    Result --> Response["HTTP 200 Response to Client"]
 ```
 
 ### Key Engineering Features

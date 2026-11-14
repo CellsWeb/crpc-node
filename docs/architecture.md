@@ -102,20 +102,20 @@ CellsWeb RPC uses **TypeBox JIT compilation** via `TypeCompiler.Compile(schema)`
 
 ```mermaid
 flowchart TD
-    Req[Incoming HTTP Request] --> CORS{Preflight OPTIONS?}
-    CORS -- Yes --> RetCORS[Return HTTP 204 with CORS Headers]
-    CORS -- No --> DocsCheck{URL == /docs?}
-    DocsCheck -- Yes --> Docs[Render Server-Side Docs UI]
-    DocsCheck -- No --> RPC{URL == /rpc?}
-    RPC -- No --> 404[Return 404 Not Found]
-    RPC -- Yes --> Parse[Parse JSON or Stream Busboy Multipart]
-    Parse --> Registry[O(1) Function Registry Lookup]
-    Registry --> WorkerCheck{worker === true?}
-    WorkerCheck -- Yes --> WorkerPool[Dispatch to Worker Thread]
-    WorkerCheck -- No --> Pipeline[Execute Middleware Chain]
-    Pipeline --> JITValidate[TypeBox JIT Input Validation]
-    JITValidate --> Handler[Execute Function Handler Run]
-    Handler --> Result[Build HTTP 200 Envelope]
+    Req["Incoming HTTP Request"] --> CORS{"Preflight OPTIONS?"}
+    CORS -- Yes --> RetCORS["Return HTTP 204 with CORS Headers"]
+    CORS -- No --> DocsCheck{"URL == /docs?"}
+    DocsCheck -- Yes --> Docs["Render Server-Side Docs UI"]
+    DocsCheck -- No --> RPC{"URL == /rpc?"}
+    RPC -- No --> NotFound["Return 404 Not Found"]
+    RPC -- Yes --> Parse["Parse JSON or Stream Busboy Multipart"]
+    Parse --> Registry["O(1) Function Registry Lookup"]
+    Registry --> WorkerCheck{"worker === true?"}
+    WorkerCheck -- Yes --> WorkerPool["Dispatch to Worker Thread"]
+    WorkerCheck -- No --> Pipeline["Execute Middleware Chain"]
+    Pipeline --> JITValidate["TypeBox JIT Input Validation"]
+    JITValidate --> Handler["Execute Function Handler Run"]
+    Handler --> Result["Build HTTP 200 Envelope"]
     WorkerPool --> Result
-    Result --> Res[Send Response to Client]
+    Result --> Res["Send Response to Client"]
 ```

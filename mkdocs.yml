@@ -60,6 +60,7 @@ nav:
       - Architecture & Protocol: architecture.md
   - Core Guides:
       - Functions & Contracts: functions.md
+      - Data Types & Schemas: schemas.md
       - Middlewares & Pipeline: middlewares.md
       - Multi-Threading (Workers): workers.md
       - Framework Adapters: adapters.md
