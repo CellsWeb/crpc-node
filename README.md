@@ -1,4 +1,18 @@
-# CellsWeb RPC Ecosystem
+<p align="center">
+  <a href="https://cellsweb.com" target="_blank" rel="noopener noreferrer">
+    <img src="https://cellsweb.com/logo.svg" alt="CellsWeb Logo" width="340" style="background: rgba(255, 255, 255, 0.96); padding: 16px 24px; border-radius: 16px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08); display: inline-block; max-width: 100%;" />
+  </a>
+</p>
+
+<p align="center">
+  <strong>High-Performance RPC API Framework for Node.js, Bun & TypeScript</strong><br>
+  <a href="https://cellsweb.com">🌐 Official Website</a> •
+  <a href="https://cellsweb.github.io/crpc-node/">📖 Node Engine Docs</a> •
+  <a href="https://cellsweb.github.io/crpc-go/">📖 Go Engine Docs</a> •
+  <a href="https://github.com/CellsWeb">🏛️ GitHub Organization</a>
+</p>
+
+# CellsWeb RPC Ecosystem (`crpc-node`)
 
 > High-performance, zero-overhead RPC API framework for Node.js & Bun powered by sub-microsecond TypeBox JIT schema validation, declarative worker thread multi-processing, Web Standards WinterCG Fetch API, Busboy streaming multipart uploads, and $O(1)$ function dispatching.
 
