@@ -41,7 +41,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MinhazurSarker/cellsweb-rpc.git"
+    "url": "git+https://github.com/CellsWeb/crpc-node.git"
   },
   "peerDependencies": {
     "react": ">=16.8.0"
