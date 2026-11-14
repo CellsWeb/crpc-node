@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { AppError, ErrorCode, toAppError } from "./errors";
+import { AppError, ErrorCode, toAppError, mapErrorCodeToHttpStatus } from "./errors";
 import { buildContext } from "./context";
 import { logRequestError } from "./logger";
 import { parseRpcRequest, type ParsedRpcRequest } from "./request";
@@ -13,7 +13,7 @@ export async function handleApiRequest(
   req: IncomingMessage | any,
   res: ServerResponse | any,
   registry: Registry,
-  options?: { trustProxy?: boolean },
+  options?: { trustProxy?: boolean; useHttpStatusCodes?: boolean },
 ): Promise<void> {
   const startTime = process.hrtime();
   let parsedPayload: ParsedRpcRequest | undefined;
@@ -100,9 +100,12 @@ export async function handleApiRequest(
     );
 
     const clientPayload = appErr.toClientPayload(requestId, durationMs);
+    const statusCode = options?.useHttpStatusCodes
+      ? mapErrorCodeToHttpStatus(appErr.code)
+      : 200;
 
     if (!responseObj.headersSent) {
-      responseObj.statusCode = 200;
+      responseObj.statusCode = statusCode;
       if (typeof responseObj.setHeader === "function") {
         responseObj.setHeader("Content-Type", "application/json; charset=utf-8");
         responseObj.setHeader("X-Request-Id", requestId);

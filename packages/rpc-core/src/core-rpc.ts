@@ -50,6 +50,7 @@ export interface CoreRpcOptions {
   healthEndpoint?: string;
   strict?: boolean;
   trustProxy?: boolean;
+  useHttpStatusCodes?: boolean;
   cors?: boolean | CorsOptions;
 }
 
@@ -147,6 +148,7 @@ export class CoreRPC {
       healthEndpoint: normalizeEndpoint(rawHealth),
       strict: options.strict ?? process.env.NODE_ENV === "production",
       trustProxy: options.trustProxy ?? false,
+      useHttpStatusCodes: options.useHttpStatusCodes ?? false,
       cors: options.cors ?? true,
     };
   }
@@ -274,6 +276,7 @@ export class CoreRPC {
         }
         await handleApiRequest(req, res, registry, {
           trustProxy: this.options.trustProxy,
+          useHttpStatusCodes: this.options.useHttpStatusCodes,
         });
         return;
       }
@@ -485,6 +488,7 @@ export class CoreRPC {
     if (method === "POST" && (pathname === rpcPath || pathname === `${rpcPath}/`)) {
       return await handleWebRpcRequest(request, registry, {
         trustProxy: this.options.trustProxy,
+        useHttpStatusCodes: this.options.useHttpStatusCodes,
         corsHeaders,
       });
     }

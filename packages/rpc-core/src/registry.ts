@@ -194,7 +194,8 @@ export async function buildRegistry(options: {
 
         const name = mwMod.metadata?.name ?? constantsMod.metadata?.name ?? dirName;
 
-        if (typeof mwMod.run !== "function") {
+        const mwRun = mwMod.run ?? (mwMod as any).default;
+        if (typeof mwRun !== "function") {
           continue;
         }
 
@@ -204,7 +205,7 @@ export async function buildRegistry(options: {
           metadata: mwMod.metadata ?? constantsMod.metadata,
           headersSchema: mwMod.headersSchema ?? constantsMod.headersSchema,
           optionsSchema: mwMod.optionsSchema ?? constantsMod.optionsSchema,
-          run: mwMod.run,
+          run: mwRun,
         });
       } catch (err) {
         logSystemError(`Failed to load middleware from ${filePath}`, err);

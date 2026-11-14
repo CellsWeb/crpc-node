@@ -79,3 +79,28 @@ export function toAppError(err: unknown): AppError {
     true,
   );
 }
+
+export function mapErrorCodeToHttpStatus(code: string): number {
+  switch (code) {
+    case ErrorCode.VALIDATION_ERROR:
+    case ErrorCode.INVALID_BODY:
+    case ErrorCode.INVALID_CONTENT_TYPE:
+    case ErrorCode.SCHEMA_MISMATCH:
+      return 400;
+    case ErrorCode.UNAUTHORIZED:
+      return 401;
+    case ErrorCode.FORBIDDEN:
+      return 403;
+    case ErrorCode.FUNCTION_NOT_FOUND:
+      return 404;
+    case ErrorCode.PAYLOAD_TOO_LARGE:
+      return 413;
+    case ErrorCode.RATE_LIMITED:
+      return 429;
+    case ErrorCode.TIMEOUT:
+      return 504;
+    case ErrorCode.INTERNAL_ERROR:
+    default:
+      return 500;
+  }
+}

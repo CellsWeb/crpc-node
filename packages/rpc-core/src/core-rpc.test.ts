@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { describe, it, expect } from "vitest";
 import { CoreRPC } from "./core-rpc";
 import { Files } from "./utils/typebox";
@@ -262,6 +263,42 @@ describe("CoreRPC Engine & Endpoints", () => {
     expect(resHtml).toContain("list");
     expect(resHtml).toContain("/my-custom-rpc");
     expect(resHtml).toContain("/my-custom-docs");
+  });
+
+  it("14. honors useHttpStatusCodes option across HTTP and Web fetch", async () => {
+    const app = new CoreRPC({
+      useHttpStatusCodes: true,
+    });
+    const handler = await app.createHandler();
+
+    // 1. Missing function via HTTP handler
+    const stream = Readable.from([
+      JSON.stringify({ namespace: "ghost", functionName: "missing", data: {} }),
+    ]) as any;
+    stream.method = "POST";
+    stream.url = "/rpc";
+    stream.headers = { "content-type": "application/json" };
+
+    const res = {
+      statusCode: 200,
+      setHeader: () => {},
+      end: () => {},
+    } as any;
+    await handler(stream, res);
+    expect(res.statusCode).toBe(404);
+
+    // 2. Missing function via Web fetch
+    const webRes = await app.fetch(
+      new Request("http://localhost:4000/rpc", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ namespace: "ghost", functionName: "missing", data: {} }),
+      }),
+    );
+    expect(webRes.status).toBe(404);
+    const body = await webRes.json();
+    expect(body.status).toBe("error");
+    expect(body.code).toBe("function_not_found");
   });
 });
 

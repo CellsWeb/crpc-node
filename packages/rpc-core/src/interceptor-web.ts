@@ -1,5 +1,5 @@
 import { buildWebContext } from "./context";
-import { AppError, ErrorCode, toAppError } from "./errors";
+import { AppError, ErrorCode, toAppError, mapErrorCodeToHttpStatus } from "./errors";
 import { logRequestError } from "./logger";
 import { runPipeline } from "./pipeline";
 import type { Registry } from "./registry";
@@ -11,6 +11,7 @@ import { getHighResDurationMs } from "./utils/timing";
 
 export interface HandleWebRpcRequestOptions {
   trustProxy?: boolean;
+  useHttpStatusCodes?: boolean;
   corsHeaders?: Record<string, string>;
   maxMultipartBytes?: number;
   maxSingleFileBytes?: number;
@@ -98,9 +99,12 @@ export async function handleWebRpcRequest(
     );
 
     const clientPayload = appErr.toClientPayload(requestId, durationMs);
+    const status = options.useHttpStatusCodes
+      ? mapErrorCodeToHttpStatus(appErr.code)
+      : 200;
 
     return new Response(safeJsonStringify(clientPayload), {
-      status: 200,
+      status,
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "X-Request-Id": requestId,
