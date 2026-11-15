@@ -5,6 +5,7 @@ export enum ErrorCode {
   VALIDATION_ERROR = "validation_error",
   UNAUTHORIZED = "unauthorized",
   FORBIDDEN = "forbidden",
+  CONFLICT = "conflict",
   RATE_LIMITED = "rate_limited",
   SCHEMA_MISMATCH = "schema_mismatch",
   INTERNAL_ERROR = "internal_error",

@@ -62,6 +62,7 @@ function sendMultipartXHR<TData>(
               code: json.code,
               status: xhr.status,
               meta: json.meta,
+              details: json.details,
             }),
           );
         } else {
@@ -252,6 +253,7 @@ export async function rawRpcRequest<TData = unknown>(
           code: json.code,
           status: response.status,
           meta: json.meta,
+          details: json.details,
         });
       }
       return json.data;
@@ -283,6 +285,7 @@ export async function rawRpcRequest<TData = unknown>(
           code: json.code,
           status: response.status,
           meta: json.meta,
+          details: json.details,
         });
       }
       return json.data;

@@ -14,6 +14,7 @@ export interface RpcResponseError {
   status: "error";
   code: string;
   message: string;
+  details?: unknown;
   meta?: {
     requestId?: string;
     durationMs?: number;

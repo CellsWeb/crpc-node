@@ -175,7 +175,7 @@ export async function parseMultipartStream(
       const savePath = path.join(tmpDir, uniqueName);
       tempFilesToCleanup.push(savePath);
 
-      const writeStream = fs.createWriteStream(savePath);
+      const writeStream = fs.createWriteStream(savePath, { mode: 0o600 });
       activeStreams.add(writeStream);
 
       const cleanupStream = () => {

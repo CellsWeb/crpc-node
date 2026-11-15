@@ -278,7 +278,7 @@ export async function parseWebRequest(
         tempFilesToCleanup.push(savePath);
 
         const arrayBuffer = await fileObj.arrayBuffer();
-        await fs.promises.writeFile(savePath, Buffer.from(arrayBuffer));
+        await fs.promises.writeFile(savePath, Buffer.from(arrayBuffer), { mode: 0o600 });
 
         const uploaded = new UploadedFile({
           path: savePath,
