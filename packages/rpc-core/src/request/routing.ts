@@ -7,7 +7,7 @@ const FORBIDDEN_IDENTIFIERS = new Set(["__proto__", "prototype", "constructor"])
 export function validateRoutingIdentifier(
   val: unknown,
   fieldName: "namespace" | "functionName",
-  payloadType: "JSON body" | "multipart payload" = "JSON body",
+  payloadType: "JSON body" | "multipart payload" | "headers" = "JSON body",
 ): string {
   if (typeof val !== "string" || !val.trim()) {
     throw new AppError(

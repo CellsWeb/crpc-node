@@ -2,12 +2,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { AppError, ErrorCode, toAppError, mapErrorCodeToHttpStatus } from "./errors";
 import { buildContext } from "./context";
 import { logRequestError } from "./logger";
+import { detectRequestKind } from "./request/content-type";
+import { validateRoutingIdentifier } from "./request/routing";
 import { parseRpcRequest, type ParsedRpcRequest } from "./request";
 import { cleanupTempFiles } from "./request/multipart";
 import type { Registry } from "./registry";
 import { getHighResDurationMs } from "./utils/timing";
 import { safeJsonStringify } from "./utils/json";
-import { runPipeline } from "./pipeline";
+import { executeMiddlewareChain, runPipeline } from "./pipeline";
 import type { TelemetryEvent, TelemetryHook } from "./telemetry";
 
 export async function handleApiRequest(
@@ -33,15 +35,68 @@ export async function handleApiRequest(
   }
 
   try {
-    parsedPayload = await parseRpcRequest(req);
-    const { namespace, functionName, data, kind } = parsedPayload;
+    const rawHeaders = (req.headers ?? req.raw?.headers ?? {}) as Record<string, unknown>;
+    const getHeader = (k: string): string | undefined => {
+      const v = rawHeaders[k] ?? rawHeaders[k.toLowerCase()] ?? (typeof req.headers?.get === "function" ? req.headers.get(k) : undefined);
+      return typeof v === "string" ? v : undefined;
+    };
+    const contentType = getHeader("content-type");
+    const kind = detectRequestKind(contentType);
 
-    fnKey = `${namespace}.${functionName}`;
-    const context = buildContext(req, namespace, functionName, {
-      trustProxy: options?.trustProxy,
-    });
-    requestId = context.requestId;
-    const reqHeaders = (req.headers ?? req.raw?.headers ?? {}) as Record<string, unknown>;
+    let context: any;
+    let skipPipelineMiddlewares = false;
+
+    // Fast-path for multipart with header routing: resolve function and execute middlewares
+    // BEFORE reading or parsing a single byte of the multipart body!
+    if (kind === "multipart") {
+      const headerNs = getHeader("x-crpc-namespace");
+      const headerFn = getHeader("x-crpc-function");
+
+      if (headerNs && headerFn) {
+        const namespace = validateRoutingIdentifier(headerNs, "namespace", "headers");
+        const functionName = validateRoutingIdentifier(headerFn, "functionName", "headers");
+        fnKey = `${namespace}.${functionName}`;
+
+        const fnEntry = registry.functions.get(fnKey);
+        if (!fnEntry) {
+          throw new AppError(
+            ErrorCode.FUNCTION_NOT_FOUND,
+            `Function "${fnKey}" not found in registry`,
+          );
+        }
+
+        if (fnEntry.contentType === "application/json") {
+          throw new AppError(
+            ErrorCode.INVALID_CONTENT_TYPE,
+            `Function "${fnKey}" expects application/json, received multipart/form-data`,
+          );
+        }
+
+        context = buildContext(req, namespace, functionName, {
+          trustProxy: options?.trustProxy,
+        });
+        requestId = context.requestId;
+
+        // Run middlewares NOW. If auth/rateLimit fails, it throws immediately.
+        // Zero file bytes are read or parsed.
+        context = await executeMiddlewareChain(fnEntry, registry, context, rawHeaders, fnKey, startTime);
+        skipPipelineMiddlewares = true;
+      }
+    }
+
+    parsedPayload = await parseRpcRequest(req);
+    const { namespace, functionName, data } = parsedPayload;
+
+    if (!fnKey || fnKey === "unknown") {
+      fnKey = `${namespace}.${functionName}`;
+    }
+
+    if (!context) {
+      context = buildContext(req, namespace, functionName, {
+        trustProxy: options?.trustProxy,
+      });
+      requestId = context.requestId;
+    }
 
     const fnEntry = registry.functions.get(fnKey);
     if (!fnEntry) {
@@ -55,7 +110,7 @@ export async function handleApiRequest(
     // to send (e.g. updating a record without changing the image), it sends JSON.
     // The function receives no file field which is valid when image is Type.Optional(...).
     // Only block the reverse: multipart sent to a JSON-only function.
-    if (kind === "multipart" && fnEntry.contentType === "application/json") {
+    if (parsedPayload.kind === "multipart" && fnEntry.contentType === "application/json") {
       throw new AppError(
         ErrorCode.INVALID_CONTENT_TYPE,
         `Function "${fnKey}" expects application/json, received multipart/form-data`,
@@ -65,9 +120,10 @@ export async function handleApiRequest(
     const result = await runPipeline({
       key: fnKey,
       data,
-      headers: reqHeaders,
+      headers: rawHeaders,
       context,
       registry,
+      skipMiddlewares: skipPipelineMiddlewares,
     });
 
     const payload = safeJsonStringify({

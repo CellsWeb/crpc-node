@@ -15,6 +15,7 @@ export interface PipelineOptions {
   context: MiddlewareContext;
   registry: Registry;
   timeoutMs?: number;
+  skipMiddlewares?: boolean;
 }
 
 export interface PipelineSuccessResult<T = unknown> {
@@ -72,35 +73,25 @@ function prepareHeadersForSchema(
   return result;
 }
 
-export async function runPipeline<T = unknown>(
-  options: PipelineOptions,
-): Promise<PipelineSuccessResult<T>> {
-  const startTime = process.hrtime();
-  const { key, registry, context } = options;
+export async function executeMiddlewareChain(
+  fnEntry: RegisteredFunction,
+  registry: Registry,
+  context: MiddlewareContext,
+  headers: Record<string, unknown>,
+  key: string,
+  startTime?: [number, number],
+): Promise<MiddlewareContext> {
+  const reqStartTime = startTime ?? process.hrtime();
   const requestId = context.requestId;
-  const headers = options.headers ?? {};
-
-  const fnEntry = registry.functions.get(key);
-  if (!fnEntry) {
-    const durationMs = getHighResDurationMs(startTime);
-    const err = new AppError(
-      ErrorCode.FUNCTION_NOT_FOUND,
-      `Function "${key}" not found in registry`,
-    );
-    logRequestError(requestId, err.code, err.message, durationMs);
-    throw err;
-  }
-
   let currentContext: MiddlewareContext = context;
 
-  // 1. Execute middleware chain
   for (const mwConfig of fnEntry.middlewares) {
     const mwEntry = registry.middlewares.get(mwConfig.name);
     if (!mwEntry) {
       logSystemError(
         `Security Boundary Violation: Middleware "${mwConfig.name}" declared on ${key} but not found in registry.`,
       );
-      const durationMs = getHighResDurationMs(startTime);
+      const durationMs = getHighResDurationMs(reqStartTime);
       const err = new AppError(
         ErrorCode.INTERNAL_ERROR,
         `Required middleware "${mwConfig.name}" is not registered on this server`,
@@ -145,6 +136,35 @@ export async function runPipeline<T = unknown>(
     if (mwResult && typeof mwResult === "object") {
       currentContext = mwResult as MiddlewareContext;
     }
+  }
+
+  return currentContext;
+}
+
+export async function runPipeline<T = unknown>(
+  options: PipelineOptions,
+): Promise<PipelineSuccessResult<T>> {
+  const startTime = process.hrtime();
+  const { key, registry, context } = options;
+  const requestId = context.requestId;
+  const headers = options.headers ?? {};
+
+  const fnEntry = registry.functions.get(key);
+  if (!fnEntry) {
+    const durationMs = getHighResDurationMs(startTime);
+    const err = new AppError(
+      ErrorCode.FUNCTION_NOT_FOUND,
+      `Function "${key}" not found in registry`,
+    );
+    logRequestError(requestId, err.code, err.message, durationMs);
+    throw err;
+  }
+
+  let currentContext: MiddlewareContext = context;
+
+  // 1. Execute middleware chain (unless already executed during header-based streaming phase)
+  if (!options.skipMiddlewares) {
+    currentContext = await executeMiddlewareChain(fnEntry, registry, context, headers, key, startTime);
   }
 
   // 2. Validate function headers

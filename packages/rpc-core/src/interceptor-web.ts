@@ -1,9 +1,10 @@
 import { buildWebContext } from "./context";
 import { AppError, ErrorCode, toAppError, mapErrorCodeToHttpStatus } from "./errors";
 import { logRequestError } from "./logger";
-import { runPipeline } from "./pipeline";
+import { executeMiddlewareChain, runPipeline } from "./pipeline";
 import type { Registry } from "./registry";
 import { cleanupTempFiles } from "./request/multipart";
+import { validateRoutingIdentifier } from "./request/routing";
 import { normalizeWebHeaders, parseWebRequest } from "./request/web";
 import type { ParsedRpcRequest } from "./request";
 import { safeJsonStringify } from "./utils/json";
@@ -32,6 +33,51 @@ export async function handleWebRpcRequest(
   let fnKey = "unknown";
 
   try {
+    const contentType = request.headers.get("content-type") || "";
+    const isMultipart = contentType.toLowerCase().includes("multipart/form-data");
+    const reqHeaders = normalizeWebHeaders(request.headers);
+
+    let context: any;
+    let skipPipelineMiddlewares = false;
+
+    // Fast-path for multipart with header routing: resolve function and execute middlewares
+    // BEFORE reading or parsing a single byte of the multipart body!
+    if (isMultipart) {
+      const headerNs = request.headers.get("x-crpc-namespace");
+      const headerFn = request.headers.get("x-crpc-function");
+
+      if (headerNs && headerFn) {
+        const namespace = validateRoutingIdentifier(headerNs, "namespace", "headers");
+        const functionName = validateRoutingIdentifier(headerFn, "functionName", "headers");
+        fnKey = `${namespace}.${functionName}`;
+
+        const fnEntry = registry.functions.get(fnKey);
+        if (!fnEntry) {
+          throw new AppError(
+            ErrorCode.FUNCTION_NOT_FOUND,
+            `Function "${fnKey}" not found in registry`,
+          );
+        }
+
+        if (fnEntry.contentType === "application/json") {
+          throw new AppError(
+            ErrorCode.INVALID_CONTENT_TYPE,
+            `Function "${fnKey}" expects application/json, received multipart/form-data`,
+          );
+        }
+
+        context = buildWebContext(request, namespace, functionName, {
+          trustProxy: options.trustProxy,
+        });
+        requestId = context.requestId;
+
+        // Run middlewares NOW. If auth/rateLimit fails, it throws immediately.
+        // Zero file bytes are read or parsed.
+        context = await executeMiddlewareChain(fnEntry, registry, context, reqHeaders, fnKey, startTime);
+        skipPipelineMiddlewares = true;
+      }
+    }
+
     parsedPayload = await parseWebRequest(request, {
       maxMultipartBytes: options.maxMultipartBytes,
       maxSingleFileBytes: options.maxSingleFileBytes,
@@ -39,12 +85,16 @@ export async function handleWebRpcRequest(
     });
     const { namespace, functionName, data, kind } = parsedPayload;
 
-    fnKey = `${namespace}.${functionName}`;
-    const context = buildWebContext(request, namespace, functionName, {
-      trustProxy: options.trustProxy,
-    });
-    requestId = context.requestId;
-    const reqHeaders = normalizeWebHeaders(request.headers);
+    if (!fnKey || fnKey === "unknown") {
+      fnKey = `${namespace}.${functionName}`;
+    }
+
+    if (!context) {
+      context = buildWebContext(request, namespace, functionName, {
+        trustProxy: options.trustProxy,
+      });
+      requestId = context.requestId;
+    }
 
     const fnEntry = registry.functions.get(fnKey);
     if (!fnEntry) {
@@ -67,6 +117,7 @@ export async function handleWebRpcRequest(
       headers: reqHeaders,
       context,
       registry,
+      skipMiddlewares: skipPipelineMiddlewares,
     });
 
     const payload = safeJsonStringify({

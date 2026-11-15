@@ -164,6 +164,7 @@ export async function parseMultipartStream(
       const { filename, mimeType } = info;
       const rawFilename = typeof filename === "string" && filename ? filename : "file";
       const cleanFilename = path.basename(rawFilename).replace(/[\x00-\x1f\x7f/\\]/g, "_");
+      const declaredMime = mimeType ? mimeType.split(";")[0].trim().toLowerCase() : "application/octet-stream";
       const rawMime =
         mimeType && mimeType !== "application/octet-stream"
           ? mimeType
@@ -223,6 +224,8 @@ export async function parseMultipartStream(
             path: savePath,
             filename,
             mimeType: detectedMime,
+            declaredMimeType: declaredMime,
+            detectedMimeType: detectedMime,
             byteLength: fileByteLength,
           });
 

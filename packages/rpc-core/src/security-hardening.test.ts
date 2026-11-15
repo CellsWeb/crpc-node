@@ -608,4 +608,56 @@ describe("Security & Robustness Probes", () => {
       expect(res.headers.get("x-frame-options")).toBe("DENY");
     });
   });
+
+  describe("13. Header-Based Multipart Routing & Zero-Byte Pre-Auth Rejection", () => {
+    it("rejects unauthorized multipart request via headers before parsing body", async () => {
+      const app = new CoreRPC();
+      const registry = await app.getRegistry();
+
+      registry.middlewares.set("requireSecret", {
+        name: "requireSecret",
+        metadata: { name: "requireSecret" },
+        run: async (opts) => {
+          if (opts.headers["x-secret"] !== "valid-token") {
+            throw new AppError(ErrorCode.UNAUTHORIZED, "Invalid secret");
+          }
+          return {};
+        },
+      });
+
+      registry.functions.set("upload.secureDoc", {
+        key: "upload.secureDoc",
+        namespace: "upload",
+        functionName: "secureDoc",
+        filePath: "/mock/upload/secureDoc/run.ts",
+        contentType: "multipart/form-data",
+        metadata: { isPublic: true },
+        middlewares: [{ name: "requireSecret" }],
+        run: async () => ({ uploaded: true }),
+      });
+
+      // Send multipart request with invalid secret and dummy body
+      const boundary = "----TestBoundary12345";
+      const body = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="test.txt"\r\nContent-Type: text/plain\r\n\r\nHello World\r\n--${boundary}--\r\n`;
+
+      const res = await app.fetch(
+        new Request("http://localhost:4000/rpc", {
+          method: "POST",
+          headers: {
+            "Content-Type": `multipart/form-data; boundary=${boundary}`,
+            "X-CRPC-Namespace": "upload",
+            "X-CRPC-Function": "secureDoc",
+            "x-secret": "wrong-token",
+          },
+          body,
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.status).toBe("error");
+      expect(json.code).toBe("unauthorized");
+      expect(json.message).toBe("Invalid secret");
+    });
+  });
 });

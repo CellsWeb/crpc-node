@@ -200,6 +200,9 @@ export async function rawRpcRequest<TData = unknown>(
     const isMultipart = multipart || hasMultipartData(mergedData);
 
     if (isMultipart) {
+      headers["X-CRPC-Namespace"] = namespace;
+      headers["X-CRPC-Function"] = functionName;
+
       const formData = buildRpcFormData(
         namespace,
         functionName,
