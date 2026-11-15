@@ -45,6 +45,7 @@ export async function handleApiRequest(
 
     let context: any;
     let skipPipelineMiddlewares = false;
+    let headerRoutingTarget: { namespace: string; functionName: string } | undefined;
 
     // Fast-path for multipart with header routing: resolve function and execute middlewares
     // BEFORE reading or parsing a single byte of the multipart body!
@@ -52,9 +53,17 @@ export async function handleApiRequest(
       const headerNs = getHeader("x-crpc-namespace");
       const headerFn = getHeader("x-crpc-function");
 
+      if ((headerNs && !headerFn) || (!headerNs && headerFn)) {
+        throw new AppError(
+          ErrorCode.INVALID_BODY,
+          "Both X-CRPC-Namespace and X-CRPC-Function headers must be provided together, or both omitted",
+        );
+      }
+
       if (headerNs && headerFn) {
         const namespace = validateRoutingIdentifier(headerNs, "namespace", "headers");
         const functionName = validateRoutingIdentifier(headerFn, "functionName", "headers");
+        headerRoutingTarget = { namespace, functionName };
         fnKey = `${namespace}.${functionName}`;
 
         const fnEntry = registry.functions.get(fnKey);
@@ -86,6 +95,18 @@ export async function handleApiRequest(
 
     parsedPayload = await parseRpcRequest(req);
     const { namespace, functionName, data } = parsedPayload;
+
+    if (headerRoutingTarget) {
+      if (
+        parsedPayload.namespace !== headerRoutingTarget.namespace ||
+        parsedPayload.functionName !== headerRoutingTarget.functionName
+      ) {
+        throw new AppError(
+          ErrorCode.INVALID_BODY,
+          `Routing mismatch: headers specify "${headerRoutingTarget.namespace}.${headerRoutingTarget.functionName}" but body specifies "${parsedPayload.namespace}.${parsedPayload.functionName}"`,
+        );
+      }
+    }
 
     if (!fnKey || fnKey === "unknown") {
       fnKey = `${namespace}.${functionName}`;

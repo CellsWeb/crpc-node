@@ -660,4 +660,67 @@ describe("Security & Robustness Probes", () => {
       expect(json.message).toBe("Invalid secret");
     });
   });
+
+  describe("14. Dual-Mode Routing Protocol Invariants", () => {
+    it("rejects partial routing headers (only namespace provided)", async () => {
+      const app = new CoreRPC();
+      const boundary = "----TestBoundaryPart1";
+      const body = `--${boundary}\r\nContent-Disposition: form-data; name="namespace"\r\n\r\nupload\r\n--${boundary}--\r\n`;
+
+      const res = await app.fetch(
+        new Request("http://localhost:4000/rpc", {
+          method: "POST",
+          headers: {
+            "Content-Type": `multipart/form-data; boundary=${boundary}`,
+            "X-CRPC-Namespace": "upload",
+          },
+          body,
+        }),
+      );
+
+      const json = await res.json();
+      expect(json.status).toBe("error");
+      expect(json.code).toBe("invalid_body");
+      expect(json.message).toContain("Both X-CRPC-Namespace and X-CRPC-Function headers must be provided together");
+    });
+
+    it("rejects routing mismatch between headers and body", async () => {
+      const app = new CoreRPC();
+      const registry = await app.getRegistry();
+
+      registry.functions.set("doc.upload", {
+        key: "doc.upload",
+        namespace: "doc",
+        functionName: "upload",
+        filePath: "/mock/doc/upload/run.ts",
+        contentType: "multipart/form-data",
+        metadata: { isPublic: true },
+        middlewares: [],
+        run: async () => ({ ok: true }),
+      });
+
+      const boundary = "----TestBoundaryMismatch";
+      const body =
+        `--${boundary}\r\nContent-Disposition: form-data; name="namespace"\r\n\r\nadmin\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="functionName"\r\n\r\ndeleteDb\r\n` +
+        `--${boundary}--\r\n`;
+
+      const res = await app.fetch(
+        new Request("http://localhost:4000/rpc", {
+          method: "POST",
+          headers: {
+            "Content-Type": `multipart/form-data; boundary=${boundary}`,
+            "X-CRPC-Namespace": "doc",
+            "X-CRPC-Function": "upload",
+          },
+          body,
+        }),
+      );
+
+      const json = await res.json();
+      expect(json.status).toBe("error");
+      expect(json.code).toBe("invalid_body");
+      expect(json.message).toContain("Routing mismatch");
+    });
+  });
 });
