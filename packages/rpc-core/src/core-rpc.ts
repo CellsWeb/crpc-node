@@ -7,6 +7,7 @@ import { renderDocsHtml } from "./docs/renderer";
 import { AppError, ErrorCode, isAppError, toAppError } from "./errors";
 import { handleApiRequest } from "./interceptor";
 import { handleWebRpcRequest } from "./interceptor-web";
+import type { TelemetryEvent, TelemetryHook } from "./telemetry";
 import {
   logger,
   logRequestError,
@@ -52,6 +53,7 @@ export interface CoreRpcOptions {
   trustProxy?: boolean;
   useHttpStatusCodes?: boolean;
   cors?: boolean | CorsOptions;
+  onTelemetry?: TelemetryHook;
 }
 
 export function computeCorsHeaders(
@@ -277,6 +279,7 @@ export class CoreRPC {
         await handleApiRequest(req, res, registry, {
           trustProxy: this.options.trustProxy,
           useHttpStatusCodes: this.options.useHttpStatusCodes,
+          onTelemetry: this.options.onTelemetry,
         });
         return;
       }
@@ -490,6 +493,7 @@ export class CoreRPC {
         trustProxy: this.options.trustProxy,
         useHttpStatusCodes: this.options.useHttpStatusCodes,
         corsHeaders,
+        onTelemetry: this.options.onTelemetry,
       });
     }
 

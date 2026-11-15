@@ -8,12 +8,17 @@ import type { Registry } from "./registry";
 import { getHighResDurationMs } from "./utils/timing";
 import { safeJsonStringify } from "./utils/json";
 import { runPipeline } from "./pipeline";
+import type { TelemetryEvent, TelemetryHook } from "./telemetry";
 
 export async function handleApiRequest(
   req: IncomingMessage | any,
   res: ServerResponse | any,
   registry: Registry,
-  options?: { trustProxy?: boolean; useHttpStatusCodes?: boolean },
+  options?: {
+    trustProxy?: boolean;
+    useHttpStatusCodes?: boolean;
+    onTelemetry?: TelemetryHook;
+  },
 ): Promise<void> {
   const startTime = process.hrtime();
   let parsedPayload: ParsedRpcRequest | undefined;
@@ -87,6 +92,20 @@ export async function handleApiRequest(
     if (!responseObj.writableEnded) {
       responseObj.end(payload);
     }
+
+    if (typeof options?.onTelemetry === "function") {
+      try {
+        options.onTelemetry({
+          requestId,
+          namespace: parsedPayload?.namespace,
+          functionName: parsedPayload?.functionName,
+          status: "ok",
+          durationMs: result.durationMs,
+          clientIp: req.socket?.remoteAddress,
+          userAgent: req.headers?.["user-agent"],
+        });
+      } catch {}
+    }
   } catch (err) {
     const durationMs = getHighResDurationMs(startTime);
     const appErr = toAppError(err);
@@ -116,6 +135,23 @@ export async function handleApiRequest(
     }
     if (!responseObj.writableEnded) {
       responseObj.end(safeJsonStringify(clientPayload));
+    }
+
+    if (typeof options?.onTelemetry === "function") {
+      try {
+        options.onTelemetry({
+          requestId,
+          namespace: parsedPayload?.namespace,
+          functionName: parsedPayload?.functionName,
+          status: "error",
+          code: appErr.code,
+          message: appErr.message,
+          durationMs,
+          clientIp: req.socket?.remoteAddress,
+          userAgent: req.headers?.["user-agent"],
+          error: err,
+        });
+      } catch {}
     }
   } finally {
     if (parsedPayload?.tempFilesToCleanup && parsedPayload.tempFilesToCleanup.length > 0) {

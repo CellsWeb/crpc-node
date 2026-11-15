@@ -97,3 +97,7 @@ export {
   type FormBoolOptions,
   type FormNumOptions,
 } from "./utils/typebox";
+export {
+  type TelemetryEvent,
+  type TelemetryHook,
+} from "./telemetry";

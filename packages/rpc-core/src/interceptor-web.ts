@@ -9,6 +9,8 @@ import type { ParsedRpcRequest } from "./request";
 import { safeJsonStringify } from "./utils/json";
 import { getHighResDurationMs } from "./utils/timing";
 
+import type { TelemetryHook } from "./telemetry";
+
 export interface HandleWebRpcRequestOptions {
   trustProxy?: boolean;
   useHttpStatusCodes?: boolean;
@@ -16,6 +18,7 @@ export interface HandleWebRpcRequestOptions {
   maxMultipartBytes?: number;
   maxSingleFileBytes?: number;
   maxJsonBytes?: number;
+  onTelemetry?: TelemetryHook;
 }
 
 export async function handleWebRpcRequest(
@@ -75,6 +78,19 @@ export async function handleWebRpcRequest(
       },
     });
 
+    if (typeof options.onTelemetry === "function") {
+      try {
+        options.onTelemetry({
+          requestId,
+          namespace: parsedPayload?.namespace,
+          functionName: parsedPayload?.functionName,
+          status: "ok",
+          durationMs: result.durationMs,
+          userAgent: request.headers.get("user-agent") ?? undefined,
+        });
+      } catch {}
+    }
+
     return new Response(payload, {
       status: 200,
       headers: {
@@ -102,6 +118,22 @@ export async function handleWebRpcRequest(
     const status = options.useHttpStatusCodes
       ? mapErrorCodeToHttpStatus(appErr.code)
       : 200;
+
+    if (typeof options.onTelemetry === "function") {
+      try {
+        options.onTelemetry({
+          requestId,
+          namespace: parsedPayload?.namespace,
+          functionName: parsedPayload?.functionName,
+          status: "error",
+          code: appErr.code,
+          message: appErr.message,
+          durationMs,
+          userAgent: request.headers.get("user-agent") ?? undefined,
+          error: err,
+        });
+      } catch {}
+    }
 
     return new Response(safeJsonStringify(clientPayload), {
       status,
