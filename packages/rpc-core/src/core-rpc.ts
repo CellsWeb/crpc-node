@@ -520,7 +520,7 @@ export class CoreRPC {
         pathname.startsWith(`${docsPath}/`))
     ) {
       const serverUrl = `${url.protocol}//${url.host}`;
-      const html = renderDocsHtml(registry, serverUrl, request.url, rpcPath, docsPath);
+      const html = renderDocsHtml(registry, serverUrl, pathname, rpcPath, docsPath);
       return new Response(html, {
         status: 200,
         headers: {
