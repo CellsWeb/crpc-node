@@ -2,7 +2,15 @@
  * multipart.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Automatic Form-Data conversion utility supporting Web (File, Blob) &
- * React Native ({ uri, name, type }) file objects across nested structures.
+ * React Native ({ uri, name, type }) file objects.
+ *
+ * Supported File Placements:
+ * - Direct top-level fields: { file: File, avatar: rnFile }
+ * - Direct arrays of files:  { gallery: [file1, file2] }
+ *
+ * Explicitly Rejected (Throws Client Error to Prevent Silent Data Loss):
+ * - Files nested inside plain objects: { product: { image: File } }
+ * - Files nested in arrays of objects: [{ image: File }]
  */
 
 export function isBlobOrFile(val: unknown): boolean {

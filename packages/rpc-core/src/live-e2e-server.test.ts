@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { CoreRPC } from "./core-rpc";
 import { AppError, ErrorCode } from "./errors";
 import { Type } from "@sinclair/typebox";
@@ -11,6 +14,8 @@ describe("Live Network E2E Server & Break-Resistance Test Suite", () => {
   let server: http.Server;
   let port: number;
   let baseUrl: string;
+  let delayedAuthInvocations = 0;
+  const tmpDir = process.env.UPLOAD_TMP_DIR ?? path.join(os.tmpdir(), "cellsweb-uploads");
 
   beforeAll(async () => {
     // 1. Create CoreRPC instance with custom endpoints and CORS enabled
@@ -110,6 +115,38 @@ describe("Live Network E2E Server & Break-Resistance Test Suite", () => {
       middlewares: [{ name: "authGuard", options: { role: "admin" } }],
       filePath: "/mock/admin/uploadSecret/run.ts",
       run: async () => ({ ok: true }),
+    } as unknown as RegisteredFunction);
+
+    // Function 6 & Middleware: Delayed Auth for Concurrent Multi-File Fallback Upload Testing
+    registry.middlewares.set("delayedAuthGuard", {
+      name: "delayedAuthGuard",
+      metadata: { description: "Enforces auth token with artificial async delay" },
+      optionsSchema: Type.Object({ role: Type.String() }),
+      run: async ({ headers, options }) => {
+        delayedAuthInvocations++;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const token = headers["authorization"];
+        if (!token || token !== "Bearer delayed-secret") {
+          throw new AppError(ErrorCode.UNAUTHORIZED, "Unauthorized delayed token");
+        }
+        return { user: { role: options.role } };
+      },
+    } as unknown as RegisteredMiddleware);
+
+    registry.functions.set("admin.multiUpload", {
+      key: "admin.multiUpload",
+      namespace: "admin",
+      functionName: "multiUpload",
+      metadata: { description: "Multi-file upload with delayed auth", isPublic: false },
+      contentType: "multipart/form-data",
+      inputSchema: Type.Object({ note: Type.String() }),
+      outputSchema: Type.Object({ ok: Type.Boolean(), count: Type.Number() }),
+      middlewares: [{ name: "delayedAuthGuard", options: { role: "admin" } }],
+      filePath: "/mock/admin/multiUpload/run.ts",
+      run: async (input: { note: string; [key: string]: any }) => {
+        const files = Array.isArray(input.files) ? input.files : input.files ? [input.files] : [];
+        return { ok: true, count: files.length };
+      },
     } as unknown as RegisteredFunction);
 
     // Start live HTTP server on ephemeral port (port: 0)
@@ -375,6 +412,68 @@ describe("Live Network E2E Server & Break-Resistance Test Suite", () => {
     expect(json.status).toBe("error");
     expect(json.code).toBe("unauthorized");
     expect(json.message).toContain("Unauthorized token");
+  });
+
+  it("deduplicates concurrent onBeforeFileSave hook across multiple files with delayed auth", async () => {
+    delayedAuthInvocations = 0;
+    const formData = new FormData();
+    formData.append("namespace", "admin");
+    formData.append("functionName", "multiUpload");
+    formData.append("note", "concurrent-batch");
+    formData.append("files", new Blob(["file content A"], { type: "text/plain" }), "a.txt");
+    formData.append("files", new Blob(["file content B"], { type: "text/plain" }), "b.txt");
+    formData.append("files", new Blob(["file content C"], { type: "text/plain" }), "c.txt");
+
+    const res = await fetch(`${baseUrl}/api/rpc`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer delayed-secret",
+      },
+      body: formData,
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.status).toBe("ok");
+    expect(json.data.ok).toBe(true);
+    expect(json.data.count).toBe(3);
+    // Crucial: Despite 3 concurrent file streams triggering the pre-auth hook,
+    // the auth middleware executed exactly ONCE via the shared authPromise.
+    expect(delayedAuthInvocations).toBe(1);
+  });
+
+  it("deduplicates concurrent onBeforeFileSave hook and writes zero disk files when delayed auth fails", async () => {
+    delayedAuthInvocations = 0;
+    const testFileTag = `unauth-dedup-${Date.now()}`;
+
+    const formData = new FormData();
+    formData.append("namespace", "admin");
+    formData.append("functionName", "multiUpload");
+    formData.append("note", "unauthorized-batch");
+    formData.append("files", new Blob(["unauthorized payload 1"], { type: "text/plain" }), `${testFileTag}-1.txt`);
+    formData.append("files", new Blob(["unauthorized payload 2"], { type: "text/plain" }), `${testFileTag}-2.txt`);
+    formData.append("files", new Blob(["unauthorized payload 3"], { type: "text/plain" }), `${testFileTag}-3.txt`);
+
+    // Send WITHOUT Authorization header
+    const res = await fetch(`${baseUrl}/api/rpc`, {
+      method: "POST",
+      body: formData,
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.status).toBe("error");
+    expect(json.code).toBe("unauthorized");
+    expect(json.message).toContain("Unauthorized delayed token");
+
+    // Assertions required by Enterprise Readiness Report:
+    // 1. Auth middleware ran exactly ONCE despite 3 concurrent file streams
+    expect(delayedAuthInvocations).toBe(1);
+    // 2. Zero pre-auth files were written to disk
+    const matchingFiles = fs.existsSync(tmpDir)
+      ? fs.readdirSync(tmpDir).filter((f) => f.includes(testFileTag))
+      : [];
+    expect(matchingFiles.length).toBe(0);
   });
 
   // ─── 6. High-Throughput & Concurrency Stress Test ───────────────────────────
