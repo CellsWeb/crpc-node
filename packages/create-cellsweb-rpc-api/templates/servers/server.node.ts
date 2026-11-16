@@ -14,7 +14,7 @@ export const app = new CoreRPC({
   middlewaresDir: "./src/middlewares",
   port: env.API_PORT,
   host: env.API_HOST,
-  docs: true,
+  docs: env.NODE_ENV !== "production" || env.API_DOCS_ENABLED === true,
 });
 
 const rpcHandler = await app.createHandler();
