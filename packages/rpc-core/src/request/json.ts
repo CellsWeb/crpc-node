@@ -25,6 +25,44 @@ function extractRpcFields(obj: Record<string, unknown>): ParsedJsonRpcPayload {
   return { namespace, functionName, data };
 }
 
+function drainRejectedJsonRequest(stream: IncomingMessage): void {
+  if (stream.destroyed || stream.readableEnded) return;
+
+  const maxDrainBytes = 512 * 1024;
+  let drainedBytes = 0;
+  let timer: NodeJS.Timeout | undefined;
+  const cleanup = () => {
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+    stream.removeListener("data", onData);
+    stream.removeListener("end", cleanup);
+    stream.removeListener("close", cleanup);
+    stream.removeListener("aborted", cleanup);
+    stream.removeListener("error", cleanup);
+    stream.socket?.removeListener("close", stop);
+  };
+  const stop = () => {
+    cleanup();
+    stream.destroy();
+  };
+  const onData = (chunk: Buffer | string) => {
+    drainedBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+    if (drainedBytes > maxDrainBytes) stop();
+  };
+
+  stream.on("end", cleanup);
+  stream.on("close", cleanup);
+  stream.on("aborted", cleanup);
+  stream.on("error", cleanup);
+  stream.on("data", onData);
+  // After an early response Node may detach the request before a peer disconnects.
+  stream.socket?.on("close", stop);
+  // Install the deadline before resuming, including for streams that finish immediately.
+  timer = setTimeout(stop, 2000);
+  timer.unref();
+  stream.resume();
+}
+
 export async function parseJsonRequest(
   req: IncomingMessage | any,
   maxBytes?: number,
@@ -76,23 +114,52 @@ export async function parseJsonRequest(
   const chunks: Buffer[] = [];
   let totalBytes = 0;
 
-  for await (const chunk of rawStream) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    totalBytes += buf.length;
+  // Explicit listeners avoid async-iterator teardown destroying the HTTP socket on rejection.
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      rawStream.removeListener("data", onData);
+      rawStream.removeListener("end", onEnd);
+      rawStream.removeListener("error", onError);
+      rawStream.removeListener("aborted", onAborted);
+      rawStream.removeListener("close", onClose);
+    };
+    const onError = (err: Error) => {
+      cleanup();
+      chunks.length = 0;
+      reject(err);
+    };
+    const onAborted = () => onError(new AppError(ErrorCode.INVALID_BODY, "Client disconnected before JSON body completed"));
+    const onClose = () => {
+      if (!rawStream.readableEnded) onAborted();
+    };
+    const onEnd = () => {
+      cleanup();
+      resolve();
+    };
+    const onData = (chunk: Buffer | string) => {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buf.length;
+      if (totalBytes > limit) {
+        cleanup();
+        chunks.length = 0;
+        drainRejectedJsonRequest(rawStream);
+        reject(new AppError(
+          ErrorCode.PAYLOAD_TOO_LARGE,
+          `JSON request payload exceeds max allowed limit of ${limit} bytes`,
+        ));
+        return;
+      }
+      chunks.push(buf);
+    };
 
-    if (totalBytes > limit) {
-      try {
-        if (typeof rawStream.destroy === "function") {
-          rawStream.destroy();
-        }
-      } catch {}
-      throw new AppError(
-        ErrorCode.PAYLOAD_TOO_LARGE,
-        `JSON request payload exceeds max allowed limit of ${limit} bytes`,
-      );
-    }
-    chunks.push(buf);
-  }
+    if (rawStream.destroyed || rawStream.aborted) { onAborted(); return; }
+    if (rawStream.readableEnded) { onEnd(); return; }
+    rawStream.on("end", onEnd);
+    rawStream.on("error", onError);
+    rawStream.on("aborted", onAborted);
+    rawStream.on("close", onClose);
+    rawStream.on("data", onData);
+  });
 
   const rawText = Buffer.concat(chunks).toString("utf-8");
   if (!rawText.trim()) {
