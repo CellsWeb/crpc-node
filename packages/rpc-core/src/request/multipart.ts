@@ -102,9 +102,40 @@ export async function parseMultipartStream(
 
       try {
         rawReq.unpipe(bb);
+
+        let drainedBytes = 0;
+        const MAX_DRAIN_BYTES = 512 * 1024; // 512KB drain ceiling allows HTTP error response flush
+        const onDrainData = (chunk: Buffer) => {
+          drainedBytes += chunk ? chunk.length : 0;
+          if (drainedBytes > MAX_DRAIN_BYTES) {
+            if (typeof rawReq.removeListener === "function") {
+              rawReq.removeListener("data", onDrainData);
+            }
+            if (typeof rawReq.destroy === "function") {
+              rawReq.destroy();
+            }
+          }
+        };
+
+        if (typeof rawReq.on === "function") {
+          rawReq.on("data", onDrainData);
+        }
         if (typeof rawReq.resume === "function") {
           rawReq.resume();
         }
+
+        // Enforce 2000ms deadline to safely close socket if client stalls or slowloris
+        const drainTimer = setTimeout(() => {
+          try {
+            if (typeof rawReq.removeListener === "function") {
+              rawReq.removeListener("data", onDrainData);
+            }
+            if (typeof rawReq.destroy === "function") {
+              rawReq.destroy();
+            }
+          } catch {}
+        }, 2000);
+        if (drainTimer.unref) drainTimer.unref();
       } catch {}
 
       for (const ws of activeStreams) {
