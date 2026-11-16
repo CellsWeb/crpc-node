@@ -365,7 +365,6 @@ function codeBlock(content: string): string {
 function groupFunctionsByNamespace(registry: Registry): Record<string, RegisteredFunction[]> {
   const grouped: Record<string, RegisteredFunction[]> = {};
   for (const fn of registry.functions.values()) {
-    if (fn.metadata?.hideFromDocs === true) continue;
     grouped[fn.namespace] ??= [];
     grouped[fn.namespace].push(fn);
   }
@@ -635,7 +634,7 @@ export function renderDocsIndex(
   const normDocs = normalizeDocsEndpoint(docsEndpoint);
   const grouped = groupFunctionsByNamespace(registry);
   const sortedNs = Object.keys(grouped).sort();
-  const totalFns = Object.values(grouped).reduce((count, functions) => count + functions.length, 0);
+  const totalFns = registry.functions.size;
   const cleanServer = serverUrl.replace(/\/$/, "");
   const cleanRpc = rpcEndpoint.startsWith("/") ? rpcEndpoint : `/${rpcEndpoint}`;
   const endpointBadge = cleanServer
@@ -891,9 +890,6 @@ export function renderFunctionDoc(
   rpcEndpoint = "/rpc",
   docsEndpoint = "/docs",
 ): string {
-  if (fn.metadata?.hideFromDocs === true) {
-    return renderDocsIndex(registry, serverUrl, rpcEndpoint, docsEndpoint);
-  }
   const normDocs = normalizeDocsEndpoint(docsEndpoint);
   const cleanServer = serverUrl.replace(/\/$/, "");
   const cleanRpc = rpcEndpoint.startsWith("/") ? rpcEndpoint : `/${rpcEndpoint}`;
