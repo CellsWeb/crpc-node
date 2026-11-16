@@ -86,7 +86,6 @@ export function mapErrorCodeToHttpStatus(code: string): number {
     case ErrorCode.VALIDATION_ERROR:
     case ErrorCode.INVALID_BODY:
     case ErrorCode.INVALID_CONTENT_TYPE:
-    case ErrorCode.SCHEMA_MISMATCH:
       return 400;
     case ErrorCode.UNAUTHORIZED:
       return 401;
@@ -94,12 +93,15 @@ export function mapErrorCodeToHttpStatus(code: string): number {
       return 403;
     case ErrorCode.FUNCTION_NOT_FOUND:
       return 404;
+    case ErrorCode.CONFLICT:
+      return 409;
     case ErrorCode.PAYLOAD_TOO_LARGE:
       return 413;
     case ErrorCode.RATE_LIMITED:
       return 429;
     case ErrorCode.TIMEOUT:
       return 504;
+    case ErrorCode.SCHEMA_MISMATCH:
     case ErrorCode.INTERNAL_ERROR:
     default:
       return 500;

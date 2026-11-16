@@ -12,7 +12,14 @@ export interface ParsedRpcRequest {
   readonly tempFilesToCleanup: string[];
 }
 
-export async function parseRpcRequest(req: IncomingMessage | any): Promise<ParsedRpcRequest> {
+export async function parseRpcRequest(
+  req: IncomingMessage | any,
+  options?: {
+    maxMultipartBytes?: number;
+    maxSingleFileBytes?: number;
+    onBeforeFileSave?: (fields: Record<string, string | string[]>) => Promise<void>;
+  },
+): Promise<ParsedRpcRequest> {
   const headers = req.headers ?? req.raw?.headers ?? {};
   const contentType =
     headers["content-type"] ??
@@ -32,7 +39,12 @@ export async function parseRpcRequest(req: IncomingMessage | any): Promise<Parse
   }
 
   if (kind === "multipart") {
-    const parsed = await parseMultipartRequest(req);
+    const parsed = await parseMultipartRequest(
+      req,
+      options?.maxMultipartBytes,
+      options?.maxSingleFileBytes,
+      options?.onBeforeFileSave,
+    );
     return {
       kind: "multipart",
       namespace: parsed.namespace,

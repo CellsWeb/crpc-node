@@ -39,6 +39,7 @@ export async function parseMultipartStream(
   req: IncomingMessage | any,
   maxMultipartBytes?: number,
   maxSingleFileBytes?: number,
+  onBeforeFileSave?: (fields: Record<string, string | string[]>) => Promise<void>,
 ): Promise<MultipartStreamResult> {
   const maxTotal =
     maxMultipartBytes ??
@@ -155,10 +156,55 @@ export async function parseMultipartStream(
       }
     });
 
-    bb.on("file", (fieldname, fileStream, info) => {
+    let preAuthVerified = false;
+
+    bb.on("file", async (fieldname, fileStream, info) => {
       if (aborted || FORBIDDEN_KEYS.has(fieldname)) {
         fileStream.resume();
         return;
+      }
+
+      const hasHeaderRouting =
+        Boolean(headers["x-crpc-namespace"] ?? headers["X-CRPC-Namespace"]) &&
+        Boolean(headers["x-crpc-function"] ?? headers["X-CRPC-Function"]);
+
+      if (!hasHeaderRouting) {
+        if (!fields.namespace || !fields.functionName) {
+          fileStream.resume();
+          abortAll(
+            new AppError(
+              ErrorCode.INVALID_BODY,
+              "Routing fields ('namespace', 'functionName') must appear before file parts in multipart payload",
+            ),
+          );
+          return;
+        }
+
+        if (Array.isArray(fields.namespace) || Array.isArray(fields.functionName)) {
+          fileStream.resume();
+          abortAll(
+            new AppError(
+              ErrorCode.INVALID_BODY,
+              "Duplicate routing fields ('namespace' or 'functionName') in multipart payload",
+            ),
+          );
+          return;
+        }
+
+        if (!preAuthVerified && onBeforeFileSave) {
+          try {
+            fileStream.pause();
+            if (typeof rawReq.pause === "function") rawReq.pause();
+            await onBeforeFileSave(fields);
+            preAuthVerified = true;
+            if (typeof rawReq.resume === "function") rawReq.resume();
+            fileStream.resume();
+          } catch (err) {
+            fileStream.resume();
+            abortAll(err as Error);
+            return;
+          }
+        }
       }
 
       const { filename, mimeType } = info;
@@ -386,7 +432,8 @@ export async function parseMultipartRequest(
   req: IncomingMessage | any,
   maxMultipartBytes?: number,
   maxSingleFileBytes?: number,
+  onBeforeFileSave?: (fields: Record<string, string | string[]>) => Promise<void>,
 ): Promise<ParsedMultipartRpcPayload> {
-  const rawResult = await parseMultipartStream(req, maxMultipartBytes, maxSingleFileBytes);
+  const rawResult = await parseMultipartStream(req, maxMultipartBytes, maxSingleFileBytes, onBeforeFileSave);
   return normalizeMultipartPayload(rawResult);
 }

@@ -136,6 +136,15 @@ export async function parseWebRequest(
     let namespace: string;
     let functionName: string;
 
+    const nsList = formData.getAll("namespace");
+    const fnList = formData.getAll("functionName");
+    if (nsList.length > 1 || fnList.length > 1) {
+      throw new AppError(
+        ErrorCode.INVALID_BODY,
+        "Duplicate routing fields ('namespace' or 'functionName') in multipart payload",
+      );
+    }
+
     try {
       namespace = validateRoutingIdentifier(
         formData.get("namespace"),
