@@ -1,5 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import http from "node:http";
+import type { Socket } from "node:net";
+import { EventEmitter } from "node:events";
+import { PassThrough, Readable } from "node:stream";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +11,7 @@ import { AppError, ErrorCode } from "./errors";
 import { Type } from "@sinclair/typebox";
 import { rawRpcRequest, createRpcClient } from "../../rpc-client/src";
 import type { RegisteredFunction, RegisteredMiddleware } from "./registry";
+import { parseJsonRequest } from "./request/json";
 
 describe("Live Network E2E Server & Break-Resistance Test Suite", () => {
   let app: CoreRPC;
@@ -201,6 +205,20 @@ describe("Live Network E2E Server & Break-Resistance Test Suite", () => {
   });
 
   // ─── 3. Wire Protocol & Successful Execution ─────────────────────────────────
+  it("returns a structured payload_too_large response for oversized JSON over live HTTP", async () => {
+    const res = await fetch(`${baseUrl}/api/rpc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        namespace: "public",
+        functionName: "greet",
+        data: { name: "x".repeat(1.5 * 1024 * 1024) },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "error", code: "payload_too_large" });
+  });
+
   it("executes valid JSON RPC request via raw HTTP POST", async () => {
     const res = await fetch(`${baseUrl}/api/rpc`, {
       method: "POST",
@@ -496,5 +514,275 @@ describe("Live Network E2E Server & Break-Resistance Test Suite", () => {
       expect(results[i].status).toBe("ok");
       expect(results[i].data.message).toBe(`Hello, User_${i}!`);
     }
+  });
+});
+
+describe("JSON body limit recovery over live HTTP", () => {
+  const limit = 1_048_576;
+  let app: CoreRPC;
+  let server: http.Server;
+  let url: string;
+  let middlewareCalls = 0;
+  let handlerCalls = 0;
+  const incoming: http.IncomingMessage[] = [];
+
+  function bodyOfSize(size: number) {
+    const prefix = '{"namespace":"limits","functionName":"echo","data":"';
+    return prefix + "x".repeat(size - prefix.length - 2) + '"}';
+  }
+
+  function post(agent: http.Agent, contentLength?: number) {
+    let request!: http.ClientRequest;
+    const response = new Promise<{ status: number; body: any }>((resolve, reject) => {
+      request = http.request(url, {
+        method: "POST", agent,
+        headers: { "Content-Type": "application/json", ...(contentLength === undefined ? {} : { "Content-Length": contentLength }) },
+      }, (res) => {
+        let data = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { data += chunk; });
+        res.on("error", reject);
+        res.on("end", () => {
+          try { resolve({ status: res.statusCode!, body: JSON.parse(data) }); }
+          catch (err) { reject(err); }
+        });
+      });
+      request.on("error", reject);
+      request.setTimeout(5000, () => request.destroy(new Error("HTTP request timed out")));
+    });
+    const socket = new Promise<Socket>((resolve) => request.once("socket", resolve));
+    return { request, response, socket };
+  }
+
+  const expectReleased = (req: http.IncomingMessage) => {
+    // Node itself may retain clearIncoming on 'end' after an early response.
+    // Isolated stream tests below additionally assert complete 'end' listener cleanup.
+    for (const event of ["data", "readable", "error", "aborted", "close"]) {
+      expect(req.listenerCount(event), `${event} listeners`).toBe(0);
+    }
+  };
+
+  beforeAll(async () => {
+    app = new CoreRPC({ rpcEndpoint: "/rpc" });
+    const registry = await app.getRegistry();
+    registry.middlewares.set("limitGuard", {
+      name: "limitGuard", run: async () => { middlewareCalls++; return {}; },
+    } as unknown as RegisteredMiddleware);
+    registry.functions.set("limits.echo", {
+      key: "limits.echo", namespace: "limits", functionName: "echo", metadata: {},
+      contentType: "application/json", middlewares: [{ name: "limitGuard" }],
+      inputSchema: Type.String(), outputSchema: Type.String(),
+      run: async (input: string) => { handlerCalls++; return input; },
+    } as unknown as RegisteredFunction);
+    const handler = await app.createHandler();
+    server = http.createServer((req, res) => { incoming.push(req); void handler(req, res); });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    url = `http://127.0.0.1:${(server.address() as any).port}/rpc`;
+  });
+
+  afterAll(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await app.close();
+  });
+
+  it.each([true, false])("rejects oversized JSON and reuses the connection (Content-Length=%s)", async (withLength) => {
+    const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+    const before = [middlewareCalls, handlerCalls];
+    try {
+      const body = bodyOfSize(limit + 128 * 1024);
+      const large = post(agent, withLength ? Buffer.byteLength(body) : undefined);
+      large.request.end(body);
+      expect(await large.response).toMatchObject({ status: 200, body: { status: "error", code: "payload_too_large" } });
+      expect([middlewareCalls, handlerCalls]).toEqual(before);
+      const rejected = incoming.at(-1)!;
+      await vi.waitFor(() => expect(rejected.readableEnded).toBe(true));
+      expectReleased(rejected);
+
+      const normal = post(agent);
+      normal.request.end(JSON.stringify({ namespace: "limits", functionName: "echo", data: "after rejection" }));
+      expect(await normal.response).toMatchObject({ status: 200, body: { status: "ok", data: "after rejection" } });
+      expect(incoming.at(-1)!.socket).toBe(rejected.socket);
+      expect([middlewareCalls, handlerCalls]).toEqual(before.map((n) => n + 1));
+      expectReleased(incoming.at(-1)!);
+    } finally { agent.destroy(); }
+  });
+
+  it("accepts JSON exactly at the limit", async () => {
+    const agent = new http.Agent({ keepAlive: true });
+    try {
+      const body = bodyOfSize(limit);
+      const normal = post(agent, limit);
+      normal.request.end(body);
+      expect(await normal.response).toMatchObject({ status: 200, body: { status: "ok", data: JSON.parse(body).data } });
+      expectReleased(incoming.at(-1)!);
+    } finally { agent.destroy(); }
+  });
+
+  it("waits for a slow normal JSON body to finish before dispatch", async () => {
+    const agent = new http.Agent({ keepAlive: true });
+    const before = [middlewareCalls, handlerCalls];
+    const normal = post(agent);
+    const count = incoming.length;
+    try {
+      normal.request.write('{"namespace":"limits","functionName":"echo","data":');
+      await vi.waitFor(() => expect(incoming.length).toBe(count + 1));
+      expect([middlewareCalls, handlerCalls]).toEqual(before);
+      normal.request.end('"slow normal"}');
+      expect(await normal.response).toMatchObject({ status: 200, body: { status: "ok", data: "slow normal" } });
+      expectReleased(incoming.at(-1)!);
+    } finally { normal.request.destroy(); agent.destroy(); }
+  });
+
+  it("closes a sender that exceeds the additional drain byte ceiling", async () => {
+    const agent = new http.Agent({ keepAlive: true });
+    const excess = post(agent, limit + 1024 * 1024);
+    const before = [middlewareCalls, handlerCalls];
+    try {
+      excess.request.write(bodyOfSize(limit + 1));
+      expect(await excess.response).toMatchObject({ status: 200, body: { status: "error", code: "payload_too_large" } });
+      const rejected = incoming.at(-1)!;
+      excess.request.write(Buffer.alloc(512 * 1024 + 1));
+      await vi.waitFor(() => expect(rejected.destroyed).toBe(true));
+      expectReleased(rejected);
+      expect([middlewareCalls, handlerCalls]).toEqual(before);
+    } finally { excess.request.destroy(); agent.destroy(); }
+  });
+
+  it("responds before a slow oversized sender finishes, then drains its bounded remainder", async () => {
+    const agent = new http.Agent({ keepAlive: true });
+    const body = bodyOfSize(limit + 128 * 1024);
+    const before = [middlewareCalls, handlerCalls];
+    const slow = post(agent, Buffer.byteLength(body));
+    try {
+      slow.request.write(body.slice(0, limit + 1));
+      expect(await slow.response).toMatchObject({ status: 200, body: { status: "error", code: "payload_too_large" } });
+      const rejected = incoming.at(-1)!;
+      expect(rejected.complete).toBe(false);
+      expect(rejected.destroyed).toBe(false);
+      slow.request.end(body.slice(limit + 1));
+      await vi.waitFor(() => expect(rejected.readableEnded).toBe(true));
+      expectReleased(rejected);
+      expect([middlewareCalls, handlerCalls]).toEqual(before);
+    } finally { slow.request.destroy(); agent.destroy(); }
+  });
+
+  it("closes a stalled oversized sender within the drain deadline", async () => {
+    const agent = new http.Agent({ keepAlive: true });
+    const stalled = post(agent, limit + 128 * 1024);
+    const before = [middlewareCalls, handlerCalls];
+    try {
+      const started = Date.now();
+      stalled.request.write(bodyOfSize(limit + 1));
+      expect(await stalled.response).toMatchObject({ status: 200, body: { status: "error", code: "payload_too_large" } });
+      const rejected = incoming.at(-1)!;
+      expect(rejected.complete).toBe(false);
+      await vi.waitFor(() => expect(rejected.destroyed).toBe(true), { timeout: 3500 });
+      expect(Date.now() - started).toBeLessThan(3500);
+      expectReleased(rejected);
+      expect([middlewareCalls, handlerCalls]).toEqual(before);
+    } finally { stalled.request.destroy(); agent.destroy(); }
+  });
+
+  it.each([false, true])("releases listeners when the client aborts (already oversized=%s)", async (oversized) => {
+    const agent = new http.Agent({ keepAlive: true });
+    const aborted = post(agent, limit + 128 * 1024);
+    // Observe rejection immediately so a deliberate client abort cannot be unhandled.
+    const outcome = aborted.response.catch(() => undefined);
+    const before = [middlewareCalls, handlerCalls];
+    const count = incoming.length;
+    try {
+      aborted.request.write(oversized ? bodyOfSize(limit + 1) : '{"namespace":');
+      const clientSocket = await aborted.socket;
+      await vi.waitFor(() => expect(incoming.length).toBe(count + 1));
+      expect(incoming.at(-1)!.complete).toBe(false);
+      if (oversized) expect(await outcome).toMatchObject({ status: 200, body: { code: "payload_too_large" } });
+      const rejected = incoming.at(-1)!;
+      clientSocket.destroy();
+      aborted.request.destroy();
+      // A response may have returned the socket to the agent already.
+      agent.destroy();
+      await vi.waitFor(() => expect(rejected.destroyed).toBe(true));
+      expectReleased(rejected);
+      expect([middlewareCalls, handlerCalls]).toEqual(before);
+      await outcome;
+    } finally { aborted.request.destroy(); agent.destroy(); }
+  });
+});
+
+describe("JSON rejection drain resource cleanup", () => {
+  const events = ["data", "readable", "end", "error", "aborted", "close"];
+  const streams: PassThrough[] = [];
+  afterEach(() => {
+    for (const stream of streams.splice(0)) stream.destroy();
+    vi.useRealTimers();
+  });
+
+  async function rejectedStream() {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const stream = new PassThrough();
+    streams.push(stream);
+    const result = parseJsonRequest(stream, 16);
+    stream.write(Buffer.alloc(32));
+    await expect(result).rejects.toMatchObject({ code: "payload_too_large" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(stream.destroyed).toBe(false);
+    expect(vi.getTimerCount()).toBe(1);
+    return stream;
+  }
+
+  const expectClean = (stream: Readable) => {
+    expect(vi.getTimerCount()).toBe(0);
+    for (const event of events) expect(stream.listenerCount(event), event).toBe(0);
+  };
+
+  it.each(["end", "close", "error", "aborted"])("cleans the drain timer and listeners on %s", async (event) => {
+    const stream = await rejectedStream();
+    if (event === "end") {
+      await new Promise<void>((resolve) => { stream.once("end", resolve); stream.end("tail"); });
+    } else if (event === "aborted") {
+      stream.emit("aborted");
+    } else {
+      await new Promise<void>((resolve) => {
+        stream.once("close", resolve);
+        stream.destroy(event === "error" ? new Error("peer reset") : undefined);
+      });
+    }
+    expectClean(stream);
+    await vi.advanceTimersByTimeAsync(2500);
+    expectClean(stream);
+  });
+
+  it("bounds discarded bytes and releases resources when the drain ceiling is exceeded", async () => {
+    const stream = await rejectedStream();
+    stream.write(Buffer.alloc(512 * 1024));
+    expect(stream.destroyed).toBe(false);
+    stream.write(Buffer.alloc(1));
+    expect(stream.destroyed).toBe(true);
+    expectClean(stream);
+  });
+
+  it("destroys an incomplete stream at the deadline and clears the timer", async () => {
+    const stream = await rejectedStream();
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(stream.destroyed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stream.destroyed).toBe(true);
+    expectClean(stream);
+  });
+
+  it("cleans up a socket disconnect after an early response detaches the request", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const socket = new EventEmitter();
+    const stream = Object.assign(new PassThrough(), { socket });
+    streams.push(stream);
+    const result = parseJsonRequest(stream, 16);
+    stream.write(Buffer.alloc(32));
+    await expect(result).rejects.toMatchObject({ code: "payload_too_large" });
+    expect(socket.listenerCount("close")).toBe(1);
+    socket.emit("close");
+    expect(stream.destroyed).toBe(true);
+    expect(socket.listenerCount("close")).toBe(0);
+    expectClean(stream);
   });
 });
