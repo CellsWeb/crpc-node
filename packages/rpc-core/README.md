@@ -697,6 +697,27 @@ describe("RPC Integration Tests", () => {
 - **Interactive Docs UI**: Visit `http://localhost:4000/docs` in your browser.
 - **Health Check**: `GET http://localhost:4000/health` returns `{ "status": "ok", "timestamp": "..." }`.
 
+### Function documentation visibility
+
+Functions appear in `/docs` by default. Set `metadata.hideFromDocs: true` to omit a function from documentation links, the directory, search, counts, schemas, and direct function views:
+
+```ts
+export const metadata = {
+  description: "Internal maintenance operation",
+  isPublic: false,      // Legacy PUBLIC/PRIVATE badge only.
+  hideFromDocs: true,   // Explicit documentation opt-out.
+};
+```
+
+| Setting | Documentation |
+|---|---|
+| `hideFromDocs` omitted or `false` | Visible |
+| `hideFromDocs: true` | Hidden, regardless of `isPublic` |
+
+Documentation visibility never grants, denies, or bypasses RPC execution. Attach authentication and authorization middleware separately. A hidden function remains callable under its existing middleware and schema rules, and remains in generated client contracts.
+
+For backward compatibility, legacy `isPublic` still selects a PUBLIC/PRIVATE badge; `isPublic: false` alone does **not** hide a function. To migrate an internal function, retain its existing metadata and add `hideFromDocs: true`. The Go equivalent is `HideFromDocs: true`; omission stays visible in both runtimes. Hidden Node documentation URLs show the filtered docs index, preserving the existing HTTP 200 HTML behavior without exposing the hidden function's details.
+
 ---
 
 ## Framework CLI (`crpc`) & Zero-Script Architecture

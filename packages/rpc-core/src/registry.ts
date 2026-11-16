@@ -8,7 +8,10 @@ import { logSystemError } from "./logger";
 
 export interface FunctionMetadata {
   description?: string;
+  /** Legacy docs badge only; does not control visibility or authorization. */
   isPublic?: boolean;
+  /** Hide from public documentation when true; omitted/false remains visible. Never affects RPC access. */
+  hideFromDocs?: boolean;
   deprecated?: boolean;
   tags?: string[];
   worker?: boolean;
