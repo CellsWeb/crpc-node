@@ -102,8 +102,8 @@ export async function parseMultipartStream(
 
       try {
         rawReq.unpipe(bb);
-        if (typeof rawReq.destroy === "function") {
-          rawReq.destroy();
+        if (typeof rawReq.resume === "function") {
+          rawReq.resume();
         }
       } catch {}
 

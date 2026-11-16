@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
 import { CoreRPC } from "./core-rpc";
+import { AppError, ErrorCode } from "./errors";
 import { Type } from "@sinclair/typebox";
 import { rawRpcRequest, createRpcClient } from "../../rpc-client/src";
 import type { RegisteredFunction, RegisteredMiddleware } from "./registry";
@@ -59,7 +60,7 @@ describe("Live Network E2E Server & Break-Resistance Test Suite", () => {
       run: async ({ headers, options }) => {
         const token = headers["authorization"];
         if (!token || token !== "Bearer secret-token") {
-          throw new Error("Unauthorized token");
+          throw new AppError(ErrorCode.UNAUTHORIZED, "Unauthorized token");
         }
         return { user: { role: options.role } };
       },
@@ -95,6 +96,20 @@ describe("Live Network E2E Server & Break-Resistance Test Suite", () => {
         for (let i = 0; i < input.n; i++) sum += i;
         return { result: sum };
       },
+    } as unknown as RegisteredFunction);
+
+    // Function 5: Protected multipart function
+    registry.functions.set("admin.uploadSecret", {
+      key: "admin.uploadSecret",
+      namespace: "admin",
+      functionName: "uploadSecret",
+      metadata: { description: "Sensitive file upload", isPublic: false },
+      contentType: "multipart/form-data",
+      inputSchema: Type.Object({ note: Type.String() }),
+      outputSchema: Type.Object({ ok: Type.Boolean() }),
+      middlewares: [{ name: "authGuard", options: { role: "admin" } }],
+      filePath: "/mock/admin/uploadSecret/run.ts",
+      run: async () => ({ ok: true }),
     } as unknown as RegisteredFunction);
 
     // Start live HTTP server on ephemeral port (port: 0)
@@ -340,6 +355,26 @@ describe("Live Network E2E Server & Break-Resistance Test Suite", () => {
     const jsonAuth = (await resAuth.json()) as any;
     expect(jsonAuth.status).toBe("ok");
     expect(jsonAuth.data.secret).toBe("classified-42");
+  });
+
+  it("delivers structured RPC error without ECONNRESET when fallback multipart auth fails", async () => {
+    const formData = new FormData();
+    formData.append("namespace", "admin");
+    formData.append("functionName", "uploadSecret");
+    formData.append("note", "secret file");
+    formData.append("file", new Blob(["hello world file content"], { type: "text/plain" }), "test.txt");
+
+    // Send WITHOUT Authorization header over real HTTP
+    const res = await fetch(`${baseUrl}/api/rpc`, {
+      method: "POST",
+      body: formData,
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.status).toBe("error");
+    expect(json.code).toBe("unauthorized");
+    expect(json.message).toContain("Unauthorized token");
   });
 
   // ─── 6. High-Throughput & Concurrency Stress Test ───────────────────────────

@@ -87,10 +87,57 @@ export async function handleWebRpcRequest(
       }
     }
 
+    const onBeforeFileSave = async (fields: Record<string, string | string[]>) => {
+      if (skipPipelineMiddlewares) return;
+
+      const rawNs = fields.namespace;
+      const rawFn = fields.functionName;
+      if (!rawNs || !rawFn) {
+        throw new AppError(
+          ErrorCode.INVALID_BODY,
+          "Routing fields ('namespace', 'functionName') must appear before file parts in multipart payload",
+        );
+      }
+      if (Array.isArray(rawNs) || Array.isArray(rawFn)) {
+        throw new AppError(
+          ErrorCode.INVALID_BODY,
+          "Duplicate routing fields ('namespace' or 'functionName') in multipart payload",
+        );
+      }
+
+      const namespace = validateRoutingIdentifier(rawNs, "namespace", "multipart payload");
+      const functionName = validateRoutingIdentifier(rawFn, "functionName", "multipart payload");
+      fnKey = `${namespace}.${functionName}`;
+
+      const fnEntry = registry.functions.get(fnKey);
+      if (!fnEntry) {
+        throw new AppError(
+          ErrorCode.FUNCTION_NOT_FOUND,
+          `Function "${fnKey}" not found in registry`,
+        );
+      }
+
+      if (fnEntry.contentType === "application/json") {
+        throw new AppError(
+          ErrorCode.INVALID_CONTENT_TYPE,
+          `Function "${fnKey}" expects application/json, received multipart/form-data`,
+        );
+      }
+
+      context = buildWebContext(request, namespace, functionName, {
+        trustProxy: options.trustProxy,
+      });
+      requestId = context.requestId;
+
+      context = await executeMiddlewareChain(fnEntry, registry, context, reqHeaders, fnKey, startTime);
+      skipPipelineMiddlewares = true;
+    };
+
     parsedPayload = await parseWebRequest(request, {
       maxMultipartBytes: options.maxMultipartBytes,
       maxSingleFileBytes: options.maxSingleFileBytes,
       maxJsonBytes: options.maxJsonBytes,
+      onBeforeFileSave,
     });
     const { namespace, functionName, data, kind } = parsedPayload;
 

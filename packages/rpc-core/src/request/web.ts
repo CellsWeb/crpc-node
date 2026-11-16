@@ -50,6 +50,7 @@ export async function parseWebRequest(
     maxMultipartBytes?: number;
     maxSingleFileBytes?: number;
     maxJsonBytes?: number;
+    onBeforeFileSave?: (fields: Record<string, string | string[]>) => Promise<void>;
   } = {},
 ): Promise<ParsedRpcRequest> {
   const contentType = request.headers.get("content-type") ?? "";
@@ -135,6 +136,7 @@ export async function parseWebRequest(
     const tempFilesToCleanup: string[] = [];
     let namespace: string;
     let functionName: string;
+    let preAuthVerified = false;
 
     const nsList = formData.getAll("namespace");
     const fnList = formData.getAll("functionName");
@@ -239,6 +241,19 @@ export async function parseWebRequest(
         typeof val === "object" &&
         typeof (val as any).arrayBuffer === "function"
       ) {
+        if (!preAuthVerified && options.onBeforeFileSave) {
+          const routingFields: Record<string, string | string[]> = {};
+          const nsAll = formData.getAll("namespace");
+          const fnAll = formData.getAll("functionName");
+          if (nsAll.length === 1) routingFields.namespace = nsAll[0] as string;
+          else if (nsAll.length > 1) routingFields.namespace = nsAll as string[];
+          if (fnAll.length === 1) routingFields.functionName = fnAll[0] as string;
+          else if (fnAll.length > 1) routingFields.functionName = fnAll as string[];
+
+          await options.onBeforeFileSave(routingFields);
+          preAuthVerified = true;
+        }
+
         totalFiles++;
         if (totalFiles > MAX_FILES) {
           cleanupTempFiles(tempFilesToCleanup);
