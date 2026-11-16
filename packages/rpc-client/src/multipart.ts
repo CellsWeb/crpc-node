@@ -71,6 +71,17 @@ function safeAppend(formData: FormData, key: string, value: unknown): void {
   if (Array.isArray(value)) {
     if (hasMultipartData(value)) {
       for (const item of value) {
+        if (
+          item &&
+          typeof item === "object" &&
+          !isBlobOrFile(item) &&
+          !isReactNativeFile(item) &&
+          hasMultipartData(item)
+        ) {
+          throw new Error(
+            `Unsupported nested file structure in array "${key}". Files must be uploaded directly or as direct arrays of files (e.g. gallery: [file1, file2]), not inside nested objects.`,
+          );
+        }
         safeAppend(formData, key, item);
       }
     } else {
@@ -81,6 +92,11 @@ function safeAppend(formData: FormData, key: string, value: unknown): void {
 
   // 4. Plain object → JSON string
   if (typeof value === "object") {
+    if (hasMultipartData(value)) {
+      throw new Error(
+        `Unsupported nested file structure in field "${key}". Files must be uploaded as top-level fields or direct arrays of files (e.g. { file, title: "..." }), not nested inside plain objects.`,
+      );
+    }
     formData.append(key, JSON.stringify(value));
     return;
   }

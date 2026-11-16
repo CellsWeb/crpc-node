@@ -208,6 +208,7 @@ export async function parseMultipartStream(
     });
 
     let preAuthVerified = false;
+    let authPromise: Promise<void> | null = null;
 
     bb.on("file", async (fieldname, fileStream, info) => {
       if (aborted || FORBIDDEN_KEYS.has(fieldname)) {
@@ -243,10 +244,13 @@ export async function parseMultipartStream(
         }
 
         if (!preAuthVerified && onBeforeFileSave) {
+          if (!authPromise) {
+            authPromise = onBeforeFileSave(fields);
+          }
           try {
             fileStream.pause();
             if (typeof rawReq.pause === "function") rawReq.pause();
-            await onBeforeFileSave(fields);
+            await authPromise;
             preAuthVerified = true;
             if (typeof rawReq.resume === "function") rawReq.resume();
             fileStream.resume();

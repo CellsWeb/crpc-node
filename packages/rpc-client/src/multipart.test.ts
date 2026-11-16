@@ -119,4 +119,34 @@ describe("multipart utilities", () => {
       expect(blobFormData.get("file")).toBeInstanceOf(Blob);
     }
   });
+
+  it("rejects unsupported nested file structures with an explicit error to prevent silent data loss", () => {
+    const rnFile = {
+      uri: "file:///tmp/nested.png",
+      name: "nested.png",
+      type: "image/png",
+    };
+
+    // 1. Nested in object
+    expect(() =>
+      buildRpcFormData("catalog", "create", {
+        product: {
+          title: "Shoes",
+          photo: rnFile,
+        },
+      }),
+    ).toThrow(/Unsupported nested file structure in field "product"/);
+
+    // 2. Nested in array of objects
+    expect(() =>
+      buildRpcFormData("catalog", "create", {
+        items: [
+          {
+            title: "Item 1",
+            photo: rnFile,
+          },
+        ],
+      }),
+    ).toThrow(/Unsupported nested file structure in array "items"/);
+  });
 });
