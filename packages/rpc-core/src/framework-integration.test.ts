@@ -180,6 +180,8 @@ describe("Framework-Agnostic Request Body Parsing", () => {
         {};
 
       const mockFastify = {
+        hasContentTypeParser: () => false,
+        addContentTypeParser: () => {},
         all(path: string, handler: (req: any, reply: any) => Promise<void>) {
           routes[`ALL ${path}`] = handler;
         },
@@ -307,6 +309,8 @@ describe("Framework-Agnostic Request Body Parsing", () => {
 
       const registeredRoutes: string[] = [];
       const mockFastify = {
+        hasContentTypeParser: () => false,
+        addContentTypeParser: () => {},
         all: (path: string) => registeredRoutes.push(`ALL ${path}`),
         get: (path: string) => registeredRoutes.push(`GET ${path}`),
       };

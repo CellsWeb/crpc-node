@@ -73,25 +73,10 @@ try {
   form.append('file', new Blob([bytes], { type: 'application/octet-stream' }), 'payload.bin');
   const uploaded = await fetch(base + '/rpc', { method: 'POST', body: form, signal: AbortSignal.timeout(5000) });
   const result = await uploaded.json();
-  // These unchanged adapters already fail multipart on the pinned baseline.
-  // Record exact compatibility evidence without claiming successful uploads
-  // or changing unrelated parser/lifecycle behavior in a template-typing fix.
-  if (adapter === 'fastify') {
-    assert.equal(uploaded.status, 415);
-    assert.equal(result.code, 'FST_ERR_CTP_INVALID_MEDIA_TYPE');
-    console.log('MULTIPART BASELINE LIMITATION: Fastify returns 415 FST_ERR_CTP_INVALID_MEDIA_TYPE');
-  } else if (adapter === 'ultimate-express') {
-    assert.equal(uploaded.status, 200);
-    assert.equal(result.status, 'error');
-    assert.equal(result.code, 'invalid_body');
-    assert.equal(result.message, 'Client disconnected before multipart upload completed');
-    console.log('MULTIPART BASELINE LIMITATION: Ultimate Express returns invalid_body (incomplete upload)');
-  } else {
-    assert.equal(uploaded.status, 200);
-    assert.equal(result.status, 'ok', JSON.stringify(result));
-    assert.deepEqual(result.data, { title: 'multipart ✓', hex: bytes.toString('hex'), filename: 'payload.bin' });
-    console.log('MULTIPART binary fidelity PASS');
-  }
+  assert.equal(uploaded.status, 200);
+  assert.equal(result.status, 'ok', JSON.stringify(result));
+  assert.deepEqual(result.data, { title: 'multipart ✓', hex: bytes.toString('hex'), filename: 'payload.bin' });
+  console.log('MULTIPART binary fidelity PASS');
 
   const index = await get('/docs');
   const indexHtml = await index.text();
