@@ -33,7 +33,7 @@ server.get("/uploads/*", async (c) => {
       404,
     );
   }
-  return new Response(result.buffer, {
+  return new Response(new Uint8Array(result.buffer), {
     status: 200,
     headers: {
       "Content-Type": result.mimeType,

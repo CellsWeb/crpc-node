@@ -17,7 +17,7 @@ export const app = new CoreRPC({
   docs: env.NODE_ENV !== "production" || env.API_DOCS_ENABLED === true,
 });
 
-export const server = express();
+export const server: ReturnType<typeof express> = express();
 const rpcHandler = await app.createHandler();
 
 // ── Static Files Route (/uploads/*) ──
