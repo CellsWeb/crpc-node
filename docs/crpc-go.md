@@ -1,44 +1,23 @@
----
-layout: default
-title: Go Engine Sibling (crpc-go)
-nav_order: 13
----
+# Go interoperability
 
-# Go Engine Sibling (`crpc-go`)
+Node and Go share the HTTP request shape and default application-error envelopes.
+Go 1.0.1 is the prepared hardened candidate; public v1.0.0 predates its verified
+fixes. Use a workspace for local Go candidate testing and the exact new module
+version after it is actually published. See the Go repository's current guide.
 
-CellsWeb RPC is a multi-language ecosystem. In addition to the TypeScript/Node.js engine, we maintain a wire-compatible, high-throughput Go engine:
+Both runtimes preserve explicit HTTP null and default omitted HTTP data to {}.
+TypeBox unions and native Go optional/nullable schemas still have different
+vocabularies. Shared fixtures cover logical shapes/auth/validation, not every
+JSON Schema keyword, numeric boundary or serialization detail.
 
-👉 **[`CellsWeb/crpc-go`](https://github.com/CellsWeb/crpc-go)**  
-📖 **[Live Go Documentation Portal](https://cellsweb.github.io/crpc-go/)**
+The Go repository's verified example-node/src/client.ts is the Unix IPC client.
+Forward credentials in headers. Anonymous connection errors and malformed JSON
+retire that connection and reject pending calls; reconnection does not replay
+failed work. Frame maximum is 2,097,152 bytes; newline counts for line frames,
+four-byte prefix is separate for length frames. Do not copy stale client code or
+claim remote middleware skipping/context injection is supported.
 
----
-
-## ⚡ The Best of Both Worlds
-
-| Feature | Node.js / Bun (`crpc-node`) | Go Engine (`crpc-go`) |
-| :--- | :--- | :--- |
-| **Primary Strength** | Fullstack agility, React/RN hooks, SSR integration | Raw compute speed, ultra-low latency, lean memory |
-| **HTTP Engine** | Node `http`, Bun native, Hono, Fastify, Elysia | **fasthttp** (Zero-allocation memory pooling) |
-| **Throughput** | 7,420 (Node) – 14,280 (Bun) req/sec | **23,485 req/sec** |
-| **Baseline RAM** | 48 MB – 64 MB | **14.8 MB** |
-| **Wire Protocol** | Single `/rpc` with Uniform HTTP 200 | Exact same single `/rpc` with Uniform HTTP 200 |
-
----
-
-## 🔌 Connecting Node.js to Go via Unix Socket IPC
-
-You can write your backend microservices in Go and invoke them from **Next.js Server Actions** or Node backends over high-speed **Unix Domain Sockets** (`/tmp/crpc.sock`):
-
-```typescript
-// app/actions/user.ts
-"use server";
-
-import { goRpc } from "@/lib/go-rpc";
-
-export async function getUserProfile(userId: string) {
-  // Invokes compiled Go binary in <50µs over Unix domain socket!
-  return await goRpc.call("user.getProfile", { id: userId });
-}
-```
-
-Learn more in the **[Go Engine Documentation](https://cellsweb.github.io/crpc-go/)**.
+Docs parity means no badges, ignored legacy isPublic/IsPublic, schema/header
+descriptions and private configured-option values excluded. Node global docs
+env names differ from Go DOCS_ENABLED/DOCS_PATH. Auth remains application
+middleware in both; Go middleware schemas do not introduce runtime validation.

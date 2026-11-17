@@ -1,3 +1,8 @@
+> **Historical material, not the current API or a security certification.**
+> Maintained guides under `docs/`, CHANGELOG.md and RELEASE.md supersede examples,
+> performance assertions and architecture claims below. Do not copy these older
+> patterns into current applications; they were not revalidated by this release.
+
 # CellsWeb RPC Ecosystem — Enterprise Security, Architecture & Reliability Audit Report
 
 **Date**: November 2026  

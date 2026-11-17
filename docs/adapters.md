@@ -1,125 +1,43 @@
----
-layout: default
-title: Framework Adapters (Hono, Elysia, Fastify, Bun)
-nav_order: 7
----
+# Server adapters
 
-# Universal Framework Adapters
+The seven complete generated templates are the tested integration examples.
+Generate each with `--framework=<name>` rather than copying an incomplete body
+parser or converting binary buffers through strings.
 
-CellsWeb RPC Node is framework-agnostic. It can run as a standalone HTTP server or mount as a first-class plugin inside **Hono**, **Elysia.js**, **Fastify**, **Express**, and **Native Bun**.
+| Template | Runtime | Integration |
+|---|---|---|
+| node | Node 24 | http.createServer with awaited CoreRPC.createHandler |
+| express | Node 24 | native request/response handler |
+| fastify | Node 24 | fastifyPlugin; scoped multipart stream parser |
+| ultimate-express | Node 24 | native handler; framework-specific end/close lifecycle |
+| hono | Node 24 with @hono/node-server | CoreRPC.fetch via createHonoHandler |
+| bun | Bun | Fetch handler/Bun.serve |
+| elysia | Bun | Fetch handler with adapter parse behavior |
 
----
-
-## 1. Hono Adapter (`app.honoPlugin`)
-
-Runs on Node.js, Bun, Cloudflare Workers, Fastly Compute, and Deno:
-
+<!-- compile: adapters.ts -->
 ```typescript
-import { Hono } from "hono";
-import { CoreRPC } from "@cellsweb/rpc-core";
-
-const app = new Hono();
-const rpc = new CoreRPC({
-  functionsDir: "./src/functions",
-  middlewaresDir: "./src/middlewares",
-  rpcEndpoint: "/rpc",
-  docsEndpoint: "/docs",
-});
-
-await rpc.init();
-
-// Mount RPC plugin on Hono
-app.route("/", rpc.honoPlugin());
-
-export default app;
+import http from 'node:http';
+import { CoreRPC } from '@cellsweb/rpc-core';
+export async function nodeServer() {
+  const rpc = new CoreRPC({ functionsDir: './dist/functions', middlewaresDir: './dist/middlewares', docs: false });
+  return { rpc, server: http.createServer(await rpc.createHandler()) };
+}
 ```
 
----
+There is no `init()` method. For Fastify register `rpc.fastifyPlugin()`; it keeps
+multipart stream parsing within the plugin scope, preserving JSON parsing.
+For Hono apply the factory to the Hono instance: `rpc.honoPlugin()(honoApp)`.
+For Elysia `.use(rpc.elysiaPlugin())` is the plugin factory; the generated full
+template additionally handles static binary responses. Follow the tested
+templates when mounting complete services.
 
-## 2. Elysia.js Adapter (`app.elysiaPlugin`)
+`rpc.fetch(request)` accepts a Web Request. Documentation uses its parsed pathname
+so queries/absolute URLs do not break details. Native and Fetch intake share
+logical contracts but buffering/lifecycle differ. Hono's tested host here is
+Node, not Cloudflare/Deno/Edge: CoreRPC discovery uses Node filesystem APIs.
+No unsupported Edge deployment guarantee is implied by a Fetch-shaped handler.
 
-Engineered for ultra-fast Bun runtimes:
-
-```typescript
-import { Elysia } from "elysia";
-import { CoreRPC } from "@cellsweb/rpc-core";
-
-const rpc = new CoreRPC({
-  functionsDir: "./src/functions",
-  middlewaresDir: "./src/middlewares",
-  rpcEndpoint: "/rpc",
-});
-
-await rpc.init();
-
-const app = new Elysia()
-  .use(rpc.elysiaPlugin())
-  .listen(4000);
-
-console.log(`🦊 Elysia + CellsWeb RPC running at ${app.server?.hostname}:${app.server?.port}`);
-```
-
----
-
-## 3. Fastify Adapter (`app.fastifyPlugin`)
-
-Pre-parsed request bodies (Fastify `req.body`) are automatically supported without stream drain errors:
-
-```typescript
-import Fastify from "fastify";
-import { CoreRPC } from "@cellsweb/rpc-core";
-
-const fastify = Fastify({ logger: true });
-
-const rpc = new CoreRPC({
-  functionsDir: "./src/functions",
-  middlewaresDir: "./src/middlewares",
-  rpcEndpoint: "/rpc",
-});
-
-await rpc.init();
-
-// Register Fastify plugin
-await fastify.register(rpc.fastifyPlugin());
-
-await fastify.listen({ port: 4000, host: "0.0.0.0" });
-```
-
----
-
-## 4. Bun Native HTTP Server (`app.serveBun`)
-
-```typescript
-import { CoreRPC } from "@cellsweb/rpc-core";
-
-const rpc = new CoreRPC({
-  functionsDir: "./src/functions",
-  middlewaresDir: "./src/middlewares",
-  port: 4000,
-});
-
-await rpc.init();
-
-// Starts native Bun.serve()
-rpc.serveBun();
-```
-
----
-
-## 5. Web Standards Fetch API (`app.fetch`)
-
-`CoreRPC` implements the WinterCG standard `fetch(request: Request): Promise<Response>` interface:
-
-```typescript
-const response = await rpc.fetch(new Request("http://localhost:4000/rpc", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    namespace: "user",
-    functionName: "getProfile",
-    data: { id: "101" },
-  }),
-}));
-
-const data = await response.json();
-```
+Keep multipart routing headers/body redundant and consistent. Do not consume a
+multipart stream in unrelated middleware before CRPC. See [uploads](uploads.md)
+and [global docs controls](interactive-docs.md); production guards apply to all
+seven generated templates. Application errors retain default HTTP 200 envelopes.

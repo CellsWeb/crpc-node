@@ -21,6 +21,18 @@ guard. That module parses supported boolean strings before passing an explicit
 `docs` option. Disabling documentation blocks index, function and middleware
 pages; it does not unregister functions or change RPC execution.
 
+The generated boolean parser accepts trimmed, case-insensitive true/false/1/0;
+invalid values fall back to false. Outside production the template keeps docs
+enabled even for an env false value; an explicit application docs:false disables
+them everywhere. Dotenv does not overwrite process exports. Raw CoreRPC does not
+load dotenv or use that parser. Go generated servers instead use exported
+DOCS_ENABLED/DOCS_PATH, reject invalid nonblank booleans and do not load .env.
+
+Index, function and middleware detail pages share the global switch. With docs
+disabled, related docs/metadata/schema paths do not expose documentation. Query
+parameters and custom docs endpoints work in native and Fetch handlers. Unknown
+docs paths retain the existing Node index fallback; Go retains404.
+
 ## Public schema metadata and private configuration
 
 The UI documents schemas, never per-function middleware option values. It does

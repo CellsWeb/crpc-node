@@ -1,116 +1,37 @@
-# CellsWeb RPC API Service
+# Generated CellsWeb RPC application
 
-Welcome to your production-ready **CellsWeb RPC API** service!
+Node 24 LTS is primary (engines >=24.0.0). Bun/Elysia templates run under Bun,
+tested separately with 1.3.11. Install dependencies, then run:
 
-Powered by `@cellsweb/rpc-core` — zero framework overhead, TypeBox schema validation, $O(1)$ in-memory function dispatching, and built-in interactive CLI generators.
-
----
-
-## Quick Start Commands
-
-```bash
-pnpm run dev                  # Start dev server with hot-reload (http://localhost:4000)
-pnpm run typecheck            # Check TypeScript types
-pnpm test                     # Run Vitest test suite
-pnpm run create:function      # Interactively scaffold a new API function + test
-pnpm run create:middleware    # Interactively scaffold a new central middleware + test
-pnpm run build                # Compile TypeScript to dist/ for production
-pnpm start                    # Run compiled server (node dist/server.js)
+```sh
+npm run typecheck
+npm test
+npm run build
+npm start
 ```
 
----
+The generated core requirement is ^1.0.34. Before that candidate is published,
+select its local tarball explicitly for local testing. The public older SDK does
+not contain every reviewed fix. See the source repository RELEASE.md.
 
-## Architecture Overview
+Use npm run dev for Node development. For Bun select Bun execution, for example
+`bun run src/server.ts` with the Bun-native template. The local crpc CLI supplies
+function/middleware generation, build and tests. Complete templates cover native
+Node, Express, Fastify, Hono, Ultimate Express, Bun and Elysia.
 
-```txt
-src/
-├── server.ts          — Entrypoint initializing CoreRPC
-├── env.ts             — TypeBox environment configuration
-├── telemetry.ts       — Optional Sentry error tracking hook
-├── utils/
-│   └── storage.ts     — Dual Local & AWS S3 file storage utility
-├── middlewares/
-│   ├── auth/          — Pre-scaffolded JWT auth stub with instructions
-│   └── rateLimit/     — Pre-scaffolded rate limit stub with instructions
-└── functions/
-    └── public/
-        └── hello/     — Sample JSON RPC function
-```
+src/env.ts loads .env without overriding exported values. API_PORT/API_HOST
+default to 4000/0.0.0.0. Docs are enabled outside production; production requires
+parsed API_DOCS_ENABLED=true (true/false/1/0, trimmed and case-insensitive).
+To disable even in development set the explicit CoreRPC docs:false option.
+Disabling docs blocks their pages, not function execution. No visibility flag
+exists; deprecated isPublic is ignored and new functions omit it.
 
----
+Replace the generated auth stub with real credential verification. Middleware
+owns authentication/authorization; remote clients forward headers, not trusted
+context or a middleware-skip switch. Function input/output schemas remain active.
 
-## Single API Endpoint (`POST /rpc` or `POST /api`)
-
-### JSON Request Example
-```json
-{
-  "namespace": "public",
-  "functionName": "hello",
-  "data": {
-    "name": "Alice"
-  }
-}
-```
-
-### Multipart Request Example (`Content-Type: multipart/form-data`)
-Pass form-data fields:
-- `namespace`: `"public"`
-- `functionName`: `"uploadAvatar"`
-- `title`: `"My Avatar"`
-- `avatar`: `<file attachment>`
-
----
-
-## Creating Functions & Middlewares
-
-### Scaffold a New Function
-```bash
-pnpm run create:function
-```
-
-Generates:
-```txt
-src/functions/{namespace}/{functionName}/
-├── constants.ts   — Metadata, accepted Content-Type, and TypeBox schemas
-├── run.ts         — Business logic handler
-├── middlewares.ts — Declarative middleware pipeline ({ name, options })
-└── test.ts        — Vitest unit test
-```
-
-### Scaffold a New Middleware
-```bash
-pnpm run create:middleware
-```
-
-Generates:
-```txt
-src/middlewares/{middlewareName}/
-├── constants.ts   — Metadata, headersSchema, and optionsSchema
-├── run.ts         — Middleware logic (receives headers, options, function, context)
-└── test.ts        — Vitest unit test
-```
-
----
-
-## Storage & File Uploads
-
-Use `storage.upload()` inside function `run.ts`:
-
-```ts
-import { storage } from "@/utils/storage";
-
-export const run = async (input, _context) => {
-  const fileBuffer = await input.avatar.toBuffer();
-  const saved = await storage.upload(fileBuffer, input.avatar.filename, "avatars");
-  return { url: saved.url };
-};
-```
-
-Set `UPLOAD_MODE=s3` in `.env` along with `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` to switch to S3 mode seamlessly.
-
----
-
-## Interactive Documentation & Health
-
-- **Interactive API Docs**: Visit `http://localhost:4000/docs` in your browser.
-- **Health Check**: `GET http://localhost:4000/health`.
+Use File/Files for uploads. Node UploadedFile exposes path, filename, mimeType,
+byteLength and stream/buffer/blob methods. Persist into application-owned storage
+while the handler runs; temporary uploads are cleaned afterward. Use configured
+limits and top-level/direct-array file fields. Fetch multipart may buffer at the
+runtime boundary; no zero-memory guarantee is implied.

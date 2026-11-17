@@ -13,6 +13,8 @@ required before distribution. Existing public versions predate this candidate.
   Fastify multipart intake and Ultimate Express completed-upload handling.
 - Retire documentation badges while retaining deprecated, ignored `isPublic`.
   Middleware docs expose schemas, not configured secret values/defaults.
+- Supply module-mode-matched TypeBox declarations for strict ESM and CommonJS
+  consumers; both use the same existing JavaScript implementation.
 - Declare Node >=24.0.0; Node 24 LTS is primary. Bun is tested separately. No
   compatibility shims were added for older Node releases.
 

@@ -1,88 +1,18 @@
-# `create-cellsweb-rpc-api`
+# create-cellsweb-rpc-api
 
-[![npm version](https://img.shields.io/npm/v/create-cellsweb-rpc-api.svg)](https://www.npmjs.com/package/create-cellsweb-rpc-api)
-[![license](https://img.shields.io/npm/l/create-cellsweb-rpc-api.svg)](LICENSE)
+Prepared candidate 1.0.30, not published by this work. Public 1.0.29 is older.
+The candidate generates core^1.0.34 and Node >=24.0.0; publish that core before
+publishing this scaffolder. Test unpublished candidates with local packed SDK
+dependencies rather than resolving the older public SDK silently.
 
-> Official CLI scaffolder for **CellsWeb RPC API** service projects.
+After publication: `npx create-cellsweb-rpc-api@1.0.30 my-api --framework=node`.
+Supported framework names are node, bun, elysia, express, fastify, hono and
+ultimate-express. Use --yes --skip-install for explicit automation, then install,
+typecheck, build and test. Bun 1.3.11 is tested separately for Bun/Elysia execution;
+Node 24 LTS is primary. Hono's tested Node host does not imply Edge discovery.
 
-> [!TIP]
-> **CellsWeb RPC Ecosystem**:
-> - ⚡ **Backend RPC Engine**: [`@cellsweb/rpc-core`](https://www.npmjs.com/package/@cellsweb/rpc-core) ($O(1)$ dispatching, TypeBox schemas, Busboy multipart)
-> - 🌐 **Client SDK & React/RN Hooks**: [`@cellsweb/rpc-client`](https://www.npmjs.com/package/@cellsweb/rpc-client) (Universal fetch & automatic multipart form-data)
-
----
-
-## Usage
-
-```bash
-# Interactive setup
-npm create cellsweb-rpc-api@latest my-app
-# or
-npx create-cellsweb-rpc-api@latest my-app
-# or
-pnpm create cellsweb-rpc-api@latest my-app
-```
-
-### Non-Interactive & Framework Flags
-
-You can specify your preferred base web framework directly using the `--framework` (or `-f`) flag:
-
-```bash
-# 1. Vanilla Node.js (Default — zero extra dependencies, native node:http)
-npx create-cellsweb-rpc-api@latest my-app --framework node
-
-# 2. Express (Standard — easiest for adding traditional REST routes & middleware)
-npx create-cellsweb-rpc-api@latest my-app --framework express
-
-# 3. Fastify (Modern — high performance & rich plugin ecosystem)
-npx create-cellsweb-rpc-api@latest my-app --framework fastify
-
-# 4. Ultimate-Express (Extreme Throughput — uWebSockets.js-backed Express drop-in)
-npx create-cellsweb-rpc-api@latest my-app --framework ultimate-express
-
-# 5. Hono (Ultra-fast Web Standards & multi-runtime: Bun, Node.js, Deno)
-npx create-cellsweb-rpc-api@latest my-app --framework hono
-
-# 6. Elysia.js (Bun-native & TypeBox first-class)
-npx create-cellsweb-rpc-api@latest my-app --framework elysia
-
-# 7. Bun Native (Zero extra dependencies, native Bun.serve)
-bun create cellsweb-rpc-api@latest my-app --framework bun
-```
-
-### Automation & CI Flags
-- `--skip-install` / `--no-install`: Skip automated package installation.
-- `--yes` / `-y`: Non-interactive mode using defaults.
-- `--pm [npm|pnpm|yarn|bun]`: Specify package manager explicitly.
-
----
-
-## Supported Base Frameworks
-
-| Framework | Dependencies | Description |
-| :--- | :--- | :--- |
-| **Vanilla Node.js** *(Default)* | *None (Zero extra deps)* | Highest raw performance directly on native `node:http`. |
-| **Express** | `express`, `@types/express` | Standard Express server; easily mount traditional REST routes alongside `/rpc`. |
-| **Fastify** | `fastify` | Fastify server with built-in plugin adapter (`app.createFastifyPlugin()`). |
-| **Ultimate-Express** | `ultimate-express` | Drop-in Express replacement powered by `uWebSockets.js` for extreme I/O throughput. |
-| **Hono** | `hono`, `@hono/node-server` | Universal Web Standards engine running seamlessly across Bun, Node.js, and Edge runtimes. |
-| **Elysia.js** | `elysia` | Bun-first web framework with native TypeBox alignment and high developer ergonomics. |
-| **Bun Native** | *None (Zero extra deps)* | Ultra-fast execution on native `Bun.serve` with zero third-party web framework overhead. |
-
----
-
-## Features
-
-- **Multi-Framework Flexibility**: Choose between Vanilla Node.js, Express, Fastify, or Ultimate-Express while keeping RPC function and middleware code 100% identical.
-- **Unified Framework CLI (`crpc`)**: Integrated single-binary developer CLI for dev with hot-reload (`crpc dev`), production build (`crpc build`), serving (`crpc start`), and test suites (`crpc test`).
-- **Pre-wired `@cellsweb/rpc-core`**: High performance $O(1)$ dispatching engine with sub-microsecond JIT schema validation.
-- **Interactive & AI Batch Generators**: Built-in CLI scripts for adding new functions (`crpc create:function`) and middlewares (`crpc create:middleware`) supporting non-interactive flags, JSON batch scaffolding (`--batch '<JSON>'`), and file specs (`--file spec.json`).
-- **Security & Integration Audit Testing**: Built-in in-process security audit test harness with HTML/JSON report generation (`crpc test:audit`).
-- **Pre-scaffolded Common Middlewares**: Includes `auth` (JWT verification stub) and `rateLimit` (in-memory rate limiting).
-- **Pluggable Extensions**: Modular application-level `env.ts` (TypeBox), `telemetry.ts` (Sentry), and `storage.ts` (Local/S3 uploads).
-
----
-
-## License
-
-MIT © Minhazur Rahman
+Generated src/env.ts loads dotenv with process exports taking precedence.
+Production docs require parsed API_DOCS_ENABLED=true; other environments keep
+the development default. Explicit app docs:false overrides it. Auth modules are
+customization stubs; supply real verification. Legacy isPublic is not generated.
+See repository docs/cli.md, docs/adapters.md and RELEASE.md for exact workflow.

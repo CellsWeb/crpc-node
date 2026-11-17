@@ -73,3 +73,4 @@ nav:
       - Testing & Security Audits: testing.md
       - Package Reference: api-reference.md
       - Go Engine Sibling: crpc-go.md
+      - Release & Migration: migration.md

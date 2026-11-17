@@ -1,116 +1,50 @@
----
-layout: default
-title: Multipart & File Uploads (Web & React Native)
-nav_order: 9
----
+# Multipart uploads
 
-# Multipart & File Uploads (Web & Mobile)
+The client converts top-level File/Blob values or React Native `{uri,name,type}`
+assets, and direct file arrays, into multipart when `multipart:true` is selected.
+Nested file-in-object inputs are rejected; they are not silently serialized.
 
-Handling file uploads in modern applications is notoriously messy. CellsWeb RPC provides a unified, zero-boilerplate solution that works seamlessly across **Web (`File` / `Blob`)** and **React Native / Expo (`{ uri, name, type }`)**.
-
----
-
-## ⚡ Automatic Object $\rightarrow$ `FormData` Conversion
-
-Developers never have to construct manual `FormData` instances. Simply pass `multipart: true`:
-
+<!-- compile: upload-client.ts -->
 ```typescript
-// Web React Component:
-const file = event.target.files[0];
-
-await rpc.request({
-  namespace: "user",
-  functionName: "uploadAvatar",
-  multipart: true,
-  data: {
-    userId: "usr_101",
-    avatar: file, // Standard Web File or Blob
-  },
-});
-```
-
-### React Native & Expo File Uploads
-
-In React Native, pass the native asset object with `uri`, `name`, and `type`:
-
-```typescript
-import * as ImagePicker from "expo-image-picker";
-
-const result = await ImagePicker.launchImageLibraryAsync({
-  mediaTypes: ImagePicker.MediaTypeOptions.Images,
-});
-
-if (!result.canceled) {
-  const asset = result.assets[0];
-
-  await rpc.request({
-    namespace: "user",
-    functionName: "uploadAvatar",
-    multipart: true,
-    data: {
-      userId: "usr_101",
-      avatar: {
-        uri: asset.uri,
-        name: asset.fileName || "photo.jpg",
-        type: asset.mimeType || "image/jpeg",
-      },
-    },
-  });
+import { createRpcClient } from '@cellsweb/rpc-client';
+const rpc = createRpcClient({ baseUrl: 'http://localhost:4000/rpc' });
+export async function uploadAvatar(avatar: File) {
+  return rpc.request({ namespace: 'user', functionName: 'uploadAvatar',
+    multipart: true, data: { avatar } });
 }
 ```
 
----
-
-## 🛡️ Backend Busboy Streaming & DoS Shield
-
-On the backend, `@cellsweb/rpc-core` streams multipart incoming data directly through `busboy`:
-
-1. **Zero Memory Bloat**: Files stream to temporary disk storage in an isolated `0o700` permission directory.
-2. **Stream Bounds Enforcement**: Enforces strict limits (`parts: 150`, `files: 20`, `fields: 100`, `fieldSize: 1MB`). Exceeding limits triggers immediate stream destruction (`abortAll()`).
-3. **Prototype Pollution Shield**: Rejects reserved property keys (`__proto__`, `constructor`, `prototype`).
-4. **Collision Containment**: Multipart metadata fields (`_data_namespace`, `_data_functionName`) are safely quarantined to eliminate routing collisions.
-
----
-
-## 💻 Backend Function Implementation
-
+<!-- compile: functions/upload/constants.ts -->
 ```typescript
-// src/functions/user/uploadAvatar/constants.ts
-import { Type, type Static } from "@sinclair/typebox";
-
-export const inputSchema = Type.Object({
-  userId: Type.String(),
-  avatar: Type.Any({ format: "binary", description: "Uploaded avatar image" }),
-});
-
-export const outputSchema = Type.Object({
-  url: Type.String(),
-});
-
+import { Type, type Static } from '@sinclair/typebox';
+import { File } from '@cellsweb/rpc-core';
+export const contentType = 'multipart/form-data';
+export const inputSchema = Type.Object({ avatar: File({ maxSizeBytes: 5 * 1024 * 1024 }) });
+export const outputSchema = Type.Object({ filename: Type.String(), bytes: Type.Number() });
 export type Input = Static<typeof inputSchema>;
-export type Output = Static<typeof outputSchema>;
 ```
 
+<!-- compile: functions/upload/run.ts -->
 ```typescript
-// src/functions/user/uploadAvatar/run.ts
-import type { Input, Output } from "./constants";
-import type { Context, UploadedFile } from "@cellsweb/rpc-core";
-import fs from "node:fs/promises";
-import path from "node:path";
-
-export default async function run(data: Input, ctx: Context): Promise<Output> {
-  const avatar = data.avatar as UploadedFile;
-
-  if (!avatar) {
-    throw { code: "validation_error", message: "Avatar file required" };
-  }
-
-  // Move temporary file to persistent storage
-  const destPath = path.join("./public/uploads", avatar.filename);
-  await fs.rename(avatar.filepath, destPath);
-
-  return {
-    url: `/uploads/${avatar.filename}`,
-  };
+import type { Input } from './constants.js';
+export async function run(input: Input) {
+  return { filename: input.avatar.filename, bytes: input.avatar.byteLength };
 }
 ```
+
+Node UploadedFile has `path`, `filename`, `mimeType`, `declaredMimeType`,
+`detectedMimeType`, `byteLength`, `createReadStream()`, `toBuffer()` and `toBlob()`.
+It does not expose `filepath`, `mimetype` or `size`. Use the generated storage
+helper or application-owned unique destinations for persistence. Do not use a
+raw client filename as a trusted destination. Complete persistence during the
+handler; framework-owned temporary files are cleaned when processing finishes.
+
+Both routing headers (`X-CRPC-Namespace`/`X-CRPC-Function`) or neither are allowed.
+When present they must agree with redundant body routing fields. Headerless
+routing remains supported; put routing text fields before files. Authentication
+preflight must not create application-owned temporary files for denied requests.
+
+Native Node/Express/Fastify/Ultimate Express use stream intake with Busboy. Fetch
+formData in Bun/Hono/Elysia may buffer at runtime. Go fasthttp buffers transport
+intake before application multipart processing. Per-request limits and cleanup
+are not an aggregate-memory or zero-buffering guarantee.

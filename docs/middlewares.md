@@ -1,135 +1,53 @@
----
-layout: default
-title: Middlewares & Context Pipeline
-nav_order: 5
----
+# Middleware and authentication
 
-# Middlewares & Context Pipeline
+Middleware receives `({headers, options, function}, context)` and returns the
+context for the next stage. Use the registered middleware name to namespace
+application state. Credential/session verification and authorization are the
+application's responsibility; the framework does not supply a JWT provider.
 
-Middlewares intercept RPC requests before function business handlers run. They handle token authentication, role validation, rate limiting, telemetry, and dependency injection.
-
----
-
-## 🔑 Crucial Architectural Rule: Context Namespacing
-
-Every middleware that produces context data **MUST namespace its output on `ctx` under its own registered middleware name**:
-
+<!-- compile: middlewares/auth/constants.ts -->
 ```typescript
-// Inside auth middleware run.ts:
-ctx.auth = {
-  user: authenticatedUser,
+import { Type } from '@sinclair/typebox';
+export const metadata = { description: 'Verify a bearer session and required role' };
+export const optionsSchema = Type.Object({ role: Type.Optional(Type.String()) });
+export const headersSchema = Type.Object({ authorization: Type.Optional(Type.String()) });
+```
+
+<!-- compile: middlewares/auth/run.ts -->
+```typescript
+import { AppError, ErrorCode, type MiddlewareFn } from '@cellsweb/rpc-core';
+type Session = { userId: string; role: string };
+// Application integration point. This example denies until you implement it.
+async function verifySession(_token: string): Promise<Session | null> { return null; }
+export const run: MiddlewareFn<{ role?: string }, { auth: Session }> = async (
+  { headers, options }, context,
+) => {
+  const raw = headers.authorization;
+  if (typeof raw !== 'string' || !raw.startsWith('Bearer '))
+    throw new AppError(ErrorCode.UNAUTHORIZED, 'Bearer credentials required');
+  const session = await verifySession(raw.slice(7));
+  if (!session) throw new AppError(ErrorCode.UNAUTHORIZED, 'Invalid credentials');
+  if (options.role && session.role !== options.role)
+    throw new AppError(ErrorCode.FORBIDDEN, 'Insufficient role');
+  return { ...context, auth: session };
 };
 ```
 
-Inside any downstream function:
+Attach middleware with `defineMiddlewares` in a function's `middlewares.ts`.
+The Node pipeline validates its declared options/headers, then invokes it in
+attachment order. Missing configured middleware fails closed. Header schemas
+are contracts; mark authorization optional when the middleware should issue its
+own unauthorized response rather than a header-schema validation error.
 
-```typescript
-export default async function run(data: Input, ctx: Context): Promise<Output> {
-  const user = ctx.auth.user; // 🔒 Cleanly namespaced under 'auth'
-}
-```
+HTTP/IPC callers forward credentials in headers. There is no supported remote
+`skipMiddlewares` or trusted `context` injection option. A browser/SSR session
+object sent as JSON remains untrusted application data. Local test context
+helpers are not a remote authentication interface.
 
-### Why Namespacing Matters
-When invoking functions from external callers or SSR frameworks with pre-authenticated sessions:
+Go uses the same auth responsibilities but native `schema.SchemaRule` metadata;
+Go middleware option/header schemas document contracts without adding automatic
+runtime validation. Go middleware must validate what it needs explicitly.
 
-```typescript
-// Next.js Server Action or Client passing session
-await client.request({
-  namespace: "user",
-  functionName: "getProfile",
-  data: { id: "123" },
-  skipMiddlewares: true,
-  context: {
-    auth: {
-      user: session.user,
-    },
-  },
-});
-```
-
-Because `ctx` is strictly namespaced under `ctx.auth`, your business handler runs identically whether authentication was performed by the Go/Node HTTP middleware or injected directly by a session provider!
-
----
-
-## 📁 Middleware Directory Structure
-
-Middlewares live in `src/middlewares/{middlewareName}/`:
-
-```text
-src/middlewares/auth/
-├── constants.ts # Metadata, optionsSchema, and headersSchema
-└── run.ts       # Middleware execution function
-```
-
----
-
-## 1. Defining Middleware Contracts (`constants.ts`)
-
-```typescript
-import { Type, type Static } from "@sinclair/typebox";
-
-export const metadata = {
-  name: "auth",
-  description: "Validates Bearer JWT tokens and injects authenticated user into context",
-};
-
-export const optionsSchema = Type.Object({
-  roles: Type.Optional(Type.Array(Type.String())),
-  optional: Type.Optional(Type.Boolean()),
-});
-
-export const headersSchema = Type.Object({
-  authorization: Type.Optional(Type.String({ description: "Bearer JWT token" })),
-});
-
-export type Options = Static<typeof optionsSchema>;
-export type Headers = Static<typeof headersSchema>;
-```
-
----
-
-## 2. Implementing Middleware Logic (`run.ts`)
-
-```typescript
-import type { Context, MiddlewareFn } from "@cellsweb/rpc-core";
-import type { Options, Headers } from "./constants";
-
-const authMiddleware: MiddlewareFn<Options, Headers> = async (ctx, headers, options) => {
-  const authHeader = headers.authorization;
-
-  if (!authHeader) {
-    if (options.optional) return;
-    throw {
-      code: "unauthorized",
-      message: "Missing Authorization header",
-    };
-  }
-
-  const token = authHeader.replace(/^Bearer\s+/i, "");
-  if (token !== "secret_token_123") {
-    throw {
-      code: "unauthorized",
-      message: "Invalid or expired token",
-    };
-  }
-
-  // 🔒 Inject into context namespaced under "auth"
-  ctx.auth = {
-    user: {
-      id: "usr_42",
-      email: "alex@cellsweb.com",
-      role: "admin",
-    },
-  };
-};
-
-export default authMiddleware;
-```
-
----
-
-## 🛡️ Fail-Closed Security Pipeline
-
-CellsWeb RPC implements strict **fail-closed** security:
-- If a function references a middleware that is missing or not registered in `src/middlewares/`, the pipeline **fails closed immediately** with `internal_error`.
-- The engine will **never** silently bypass missing middlewares to execute an unauthenticated or unprotected handler.
+Docs show schemas, descriptions and required headers, never configured option
+values/defaults. Keep secrets out of public descriptions. Deprecated isPublic
+has no authorization meaning and is ignored.

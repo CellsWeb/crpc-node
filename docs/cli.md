@@ -1,83 +1,31 @@
----
-layout: default
-title: CLI & AI Batch Scaffolding
-nav_order: 10
----
+# CLI
 
-# Universal CLI & AI Batch Scaffolding
+The scaffolder creates a project; `@cellsweb/rpc-core` supplies its runtime `crpc`
+binary. Both packages expose that bin name, so use the project-local core CLI for
+development/builds rather than relying on global install ordering.
 
-CellsWeb RPC provides the **`crpc`** command-line interface directly bundled inside `@cellsweb/rpc-core`. Projects require zero external script dependencies (`scripts/` folder completely eliminated).
+After the candidate is actually published:
 
----
-
-## 🛠️ CLI Commands
-
-| Command | Shortcut | Description |
-| :--- | :--- | :--- |
-| `crpc dev` | `pnpm dev` | Starts development server with hot-reloading |
-| `crpc build` | `pnpm build` | Compiles TypeScript with production ESM relative path resolution (`tsc-alias -f`) |
-| `crpc start` | `pnpm start` | Runs compiled production server (`node dist/server.js`) |
-| `crpc test` | `pnpm test` | Executes in-process Vitest integration test suite |
-| `crpc test:audit` | `pnpm test:audit`| Generates client-facing HTML/JSON security audit verification reports |
-| `crpc create:function` | `pnpm create:function` | Scaffolds a new RPC function, contracts, and test |
-| `crpc create:middleware` | `pnpm create:middleware` | Scaffolds a new reusable middleware and test |
-
----
-
-## 🤖 Non-Interactive & AI Batch Scaffolding
-
-AI coding agents and automated build systems can scaffold single functions or dozens of functions without TTY prompt blocking.
-
-### 1. CLI Flags
-
-```bash
-pnpm crpc create:function --ns user --name updatePhone --middlewares auth,rateLimit
+```sh
+npx create-cellsweb-rpc-api@1.0.30 my-api --framework=fastify --yes
+cd my-api
+npm run create:function -- --ns catalog --name get --contentType json
+npm run create:middleware -- --name tenantResolver --description 'Resolve tenant'
+npm run typecheck
+npm run build
+npm start
 ```
 
-For multipart file upload endpoints:
+For local unpublished candidate usage, install tarballs as described in the
+repository RELEASE.md. `--skip-install` leaves dependency installation to you.
 
-```bash
-pnpm crpc create:function --ns user --name uploadBanner --multipart --middlewares auth
-```
+`crpc dev [entry]` runs a TS watcher; `crpc build` runs tsc then tsc-alias with
+emitted-extension resolution; `crpc start [entry]` executes production JS. The
+generated project's devDependencies supply those tools. Bun execution is selected
+when the CLI itself runs under Bun; preserve the selected template/runtime.
 
-### 2. JSON Batch String
-
-Scaffold multiple functions in a single automated command:
-
-```bash
-pnpm crpc create:function --batch '[
-  {"namespace": "billing", "name": "createInvoice", "middlewares": ["auth"]},
-  {"namespace": "billing", "name": "refundInvoice", "middlewares": ["auth", "rateLimit"]},
-  {"namespace": "billing", "name": "uploadReceipt", "multipart": true}
-]'
-```
-
-### 3. File-Based Batch Scaffolding
-
-Generate entire API schemas from an architect's specification file:
-
-```bash
-pnpm crpc create:function --file ./api-spec.json
-```
-
----
-
-## 💻 Programmatic Scaffolding API
-
-You can call the scaffolders directly in Node.js build scripts:
-
-```typescript
-import { scaffoldFunction, scaffoldMiddleware } from "@cellsweb/rpc-core";
-
-await scaffoldFunction(process.cwd(), {
-  namespace: "user",
-  name: "changePassword",
-  multipart: false,
-  middlewares: ["auth"],
-});
-
-await scaffoldMiddleware(process.cwd(), {
-  name: "auditLog",
-  description: "Records security audit trail",
-});
-```
+Function generation also supports JSON batch specs (`--batch`/`--file`). Node's
+function CLI accepts `--middlewares`; Go's CLI does not share every flag—attach
+Go middleware in the generated declaration file. Check each tool's own usage.
+`crpc test`, `test:watch`, `test:coverage`, `test:audit` invoke configured Vitest
+commands; the audit command is a test-report convenience, not security certification.

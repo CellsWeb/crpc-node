@@ -1,6 +1,11 @@
+> **Historical material, not the current API or a security certification.**
+> Maintained guides under `docs/`, CHANGELOG.md and RELEASE.md supersede examples,
+> performance assertions and architecture claims below. Do not copy these older
+> patterns into current applications; they were not revalidated by this release.
+
 # 🚀 CellsWeb RPC: Master Specification, Code Examples & Go Porting Blueprint
 
-This document is the **authoritative architectural specification, complete code example handbook, and Go porting blueprint** for the **CellsWeb RPC Ecosystem**.
+This document records an **older architectural proposal and Go porting blueprint** for the **CellsWeb RPC Ecosystem**.
 
 It contains:
 - The complete architectural mechanics of the existing TypeScript engine (`@cellsweb/rpc-core`, `@cellsweb/rpc-client`, `create-cellsweb-rpc-api`).

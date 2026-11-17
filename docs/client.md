@@ -1,140 +1,41 @@
----
-layout: default
-title: Universal Client SDK & React Hooks
-nav_order: 8
----
+# Client SDK and React
 
-# Universal Client SDK & React Hooks
+The base package supplies fetch RPC and multipart helpers. React is optional and
+has its own `@cellsweb/rpc-client/react` entry. See [release status](getting-started.md)
+before installing this unpublished candidate's version.
 
-The **`@cellsweb/rpc-client`** package provides a universal TypeScript client for Web, React, Next.js, and React Native / Expo applications.
-
----
-
-## 📦 Installation
-
-```bash
-pnpm add @cellsweb/rpc-client
-# or
-npm install @cellsweb/rpc-client
-```
-
----
-
-## 🚀 Creating an RPC Client
-
+<!-- compile: client.ts -->
 ```typescript
-import { createRpcClient } from "@cellsweb/rpc-client";
-
-export const rpc = createRpcClient({
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/rpc",
-  // Dynamic header resolution (e.g. read auth token from local storage)
-  defaultHeaders: () => ({
-    authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-  }),
-});
-```
-
-### Making Direct Requests
-
-```typescript
-try {
-  const profile = await rpc.request({
-    namespace: "user",
-    functionName: "getProfile",
-    data: { id: "usr_101" },
-  });
-
-  console.log(profile.name, profile.email);
-} catch (err) {
-  if (err instanceof RpcError) {
-    console.error(`RPC Error [${err.code}]:`, err.message, err.details);
-  }
+import { createRpcClient, RpcError } from '@cellsweb/rpc-client';
+export const rpc = createRpcClient({ baseUrl: 'http://localhost:4000/rpc',
+  defaultHeaders: () => ({ authorization: 'Bearer replace-with-current-credential' }) });
+export async function hello(name: string) {
+  try { return await rpc.request<{ greeting: string }>({ namespace: 'public', functionName: 'hello', data: { name } }); }
+  catch (error) { if (error instanceof RpcError) console.error(error.code, error.details); throw error; }
 }
 ```
 
----
+`request` unwraps successful data and throws RpcError for structured RPC failures.
+Forward current credentials via headers, not a caller-supplied trusted context.
+Do not infer application success solely from HTTP 200. `rawRpcRequest` is also a
+standalone unwrapped caller; its name does not mean it returns the raw envelope.
 
-## ⚡ Standalone Direct Caller (`rawRpcRequest`)
-
-In non-React contexts (Next.js middleware, Zustand stores, `AuthProvider.tsx`), React hooks cannot be used. Use `rawRpcRequest`:
-
-```typescript
-import { rawRpcRequest } from "@cellsweb/rpc-client";
-
-export async function checkSession(token: string) {
-  return await rawRpcRequest({
-    baseUrl: "http://localhost:4000/rpc",
-    namespace: "auth",
-    functionName: "verifyToken",
-    data: { token },
-  });
-}
-```
-
----
-
-## ⚛️ React & Next.js Hooks
-
-Wrap your application in `<RpcProvider>`:
-
+<!-- compile: react-client.tsx -->
 ```tsx
-// app/providers.tsx or index.tsx
-import { RpcProvider } from "@cellsweb/rpc-client";
-import { rpc } from "@/lib/rpc";
-
-export function Providers({ children }: { children: React.ReactNode }) {
-  return <RpcProvider client={rpc}>{children}</RpcProvider>;
+import type { ReactNode } from 'react';
+import { createRpcClient } from '@cellsweb/rpc-client';
+import { RpcProvider, useRpcQuery, useRpcMutation } from '@cellsweb/rpc-client/react';
+const rpc = createRpcClient({ baseUrl: 'http://localhost:4000/rpc' });
+export function Provider({ children }: { children: ReactNode }) { return <RpcProvider client={rpc}>{children}</RpcProvider>; }
+export function Greeting({ name }: { name: string }) {
+  const query = useRpcQuery<{ greeting: string }, { name: string }>({ namespace: 'public', functionName: 'hello', data: { name } });
+  const mutation = useRpcMutation<{ greeting: string }, { name: string }>({ namespace: 'public', functionName: 'hello' });
+  return <button disabled={query.loading || mutation.loading} onClick={() => { void mutation.mutate({ name }).catch(console.error); }}>{query.data?.greeting ?? 'Load greeting'}</button>;
 }
 ```
 
-### 1. `useRpcQuery` (Data Fetching)
-Features query deduplication, automatic dependency re-fetching, and monotonic race-condition protection:
-
-```tsx
-import { useRpcQuery } from "@cellsweb/rpc-client";
-
-export function UserProfile({ userId }: { userId: string }) {
-  const { data, loading, error, refetch } = useRpcQuery("user", "getProfile", {
-    id: userId,
-  });
-
-  if (loading) return <div>Loading profile...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-
-  return (
-    <div>
-      <h1>{data.name}</h1>
-      <p>{data.email}</p>
-      <button onClick={() => refetch()}>Refresh</button>
-    </div>
-  );
-}
-```
-
-### 2. `useRpcMutation` (Updates & Actions)
-
-```tsx
-import { useRpcMutation } from "@cellsweb/rpc-client";
-import { useState } from "react";
-
-export function UpdateEmailForm() {
-  const [email, setEmail] = useState("");
-  const { mutate, loading, error } = useRpcMutation("user", "updateEmail");
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const result = await mutate({ email });
-    alert("Email updated successfully!");
-  };
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <input value={email} onChange={(e) => setEmail(e.target.value)} />
-      <button type="submit" disabled={loading}>
-        {loading ? "Updating..." : "Save"}
-      </button>
-      {error && <p style={{ color: "red" }}>{error.message}</p>}
-    </form>
-  );
-}
-```
+Hooks accept one options object. Query returns `data`, `loading`, `error`,
+`refetch`; mutation returns `mutate`, `loading`, `error`, `reset`. Hooks require
+RpcProvider. Query deduplication/re-render ordering does not replace server-side
+authorization or idempotency handling. Use [multipart](uploads.md) explicitly for
+file requests; never manually omit/mismatch the generated routing fields.

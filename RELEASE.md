@@ -13,13 +13,13 @@ an artifact is already available.
 | github.com/CellsWeb/crpc-go and crpc-go CLI | v1.0.0 | v1.0.1 |
 
 Generated Node apps require `@cellsweb/rpc-core:^1.0.34` and Node >=24.0.0.
-That requirement becomes registry-resolvable only after core1.0.34 is published.
+That requirement becomes registry-resolvable only after core 1.0.34 is published.
 Clean candidate tests select the actual local SDK tarball explicitly; they do
 not substitute the older public core while claiming candidate coverage.
 
-Node 24 LTS is primary. The engine floor24.0.0 is tested directly; this is a
+Node 24 LTS is primary. The engine floor 24.0.0 is tested directly; this is a
 documented runtime policy change from earlier guides. Older Node versions can
-work without shims but are not declared supported. Bun1.3.11 is tested separately.
+work without shims but are not declared supported. Bun 1.3.11 is tested separately.
 Review the versioning impact of this runtime policy before final approval.
 
 ## Local candidate installation and smoke tests
@@ -29,6 +29,7 @@ From the Node repository, build and pack into an empty disposable directory:
 ```sh
 pnpm build
 pnpm typecheck
+pnpm --filter @cellsweb/rpc-core test:types
 pnpm test
 mkdir -p /tmp/crpc-release-artifacts
 npm pack ./packages/rpc-core --pack-destination /tmp/crpc-release-artifacts
@@ -48,7 +49,7 @@ Hono and Ultimate Express. Test successful, schema-invalid and unauthorized
 requests, file arrays/empty/binary uploads, malformed/oversized/interrupted
 requests, cleanup, and production docs disabled/enabled. Test installed exports
 with CommonJS and ESM, React from `/react`, declarations and generated CLI bins.
-Use Node24.0.0 and the primary installed Node24 runtime; run Bun adapters on Bun.
+Use Node 24.0.0 and the primary installed Node 24 runtime; run Bun adapters on Bun.
 
 For Go candidate use, build this checkout's CLI, generate an app, and explicitly
 select the SDK checkout using `go work init . /absolute/path/to/rpc-go`. The
@@ -102,21 +103,23 @@ records the final exact commit SHAs; this file cannot embed its own commit SHA.
 
 1. Recheck version availability, clean Git status, verified SHA and exact packed
    contents/checksums. Never overwrite or retarget an existing release.
-2. Publish the validated core1.0.34 artifact first, then client1.0.24, then
-   scaffolder1.0.30, whose generated SDK range now resolves to hardened core.
+2. Publish the validated core 1.0.34 artifact first, then client 1.0.24, then
+   scaffolder 1.0.30, whose generated SDK range now resolves to hardened core.
    Scoped packages retain public access. Avoid the unchecked root publish-all
    shortcut. Confirm registry versions/exports before promoting defaults.
 3. Tag the approved Go commit with a **new root-module tag v1.0.1**. The module
-   path stays `github.com/CellsWeb/crpc-go`; the CLI display version is1.0.1.
+   path stays `github.com/CellsWeb/crpc-go`; the CLI display version is 1.0.1.
    Never move v1.0.0 or describe it as hardened. Its older source-build fallback
-   remains intentional; a versioned v1.0.1 CLI selects SDKv1.0.1 automatically.
+   remains intentional; a versioned v1.0.1 CLI selects SDK v1.0.1 automatically.
 4. Once the new Go tag is publicly available, check the module proxy and install
    `github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.1` into a clean GOBIN. Generate a
-   fresh app with `GOWORK=off`, confirm SDKv1.0.1/no replacement, resolve/build/run
+   fresh app with `GOWORK=off`, confirm SDK v1.0.1/no replacement, resolve/build/run
    it, and repeat HTTP/docs/auth/schema/IPC smoke tests. This exact public
    installation is not testable before publication and is a release gate.
 5. Repeat normal registry-only Node scaffolding without file overrides. Confirm
-   core>=1.0.34 and all seven builds/runtime checks, then publish reviewed docs.
+   core>=1.0.34 and all seven builds/runtime checks. Update candidate-version
+   labels to published status only after registry/module checks, then publish
+   the reviewed docs.
 
 If prerelease distribution is preferred, first choose explicit `-rc.N` package
 versions and a matching generated SDK range, repack/retest them, and use a
