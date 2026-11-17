@@ -10,6 +10,17 @@ const { app, server } = module;
 const { AppError, ErrorCode } = await import(pathToFileURL(path.join(project, 'node_modules/@cellsweb/rpc-core/dist/index.js')).href);
 const registry = await app.getRegistry();
 const trace = [], requests = [], pendingTimers = new Set();
+const tmp = process.env.UPLOAD_TMP_DIR;
+let writes = 0;
+const originalCreateWriteStream = fs.createWriteStream, originalWriteFile = fs.promises.writeFile;
+fs.createWriteStream = (file, ...args) => {
+  if (String(file).startsWith(tmp)) writes++;
+  return originalCreateWriteStream(file, ...args);
+};
+fs.promises.writeFile = async (file, ...args) => {
+  if (String(file).startsWith(tmp)) writes++;
+  return originalWriteFile(file, ...args);
+};
 const originalSetTimeout = globalThis.setTimeout, originalClearTimeout = globalThis.clearTimeout;
 // Track only CRPC's bounded multipart error-drain timers.
 globalThis.setTimeout = (callback, ms, ...args) => {
@@ -28,6 +39,7 @@ registry.middlewares.set('probeAuth', { name: 'probeAuth', filePath: '/probe', r
     for (const name of ['end', 'close', 'aborted']) req.once(name, () => record.events.push([name, req.complete, req.readableEnded]));
     requests.push(record);
   }
+  if (headers['x-probe-auth-delay'] === 'true') await new Promise(resolve => originalSetTimeout(resolve, 100));
   return context;
 } });
 for (const name of ['upload', 'array']) {
@@ -57,7 +69,6 @@ if (adapter === 'bun') {
   base = `http://127.0.0.1:${listener.address().port}`;
   stop = () => new Promise(resolve => { listener.closeAllConnections?.(); listener.close(resolve); });
 }
-const tmp = process.env.UPLOAD_TMP_DIR;
 const tempFiles = () => fs.existsSync(tmp) ? fs.readdirSync(tmp) : [];
 async function until(predicate, message, ms = 1500) {
   const end = Date.now() + ms;
@@ -130,10 +141,14 @@ try {
     error(await exchange(form(), { authorization: 'Bearer allowed', 'x-crpc-namespace': 'probe' }), 'invalid_body'); assert.equal(trace.length, 0);
   });
   await check('header authorization denies before file creation', async () => {
+    const before = writes;
     error(await exchange(form(), { ...headers(), authorization: 'denied' }), 'unauthorized'); assert.deepEqual(trace, ['auth']);
+    assert.equal(writes, before, 'denied request must not create a temporary file');
   });
   await check('headerless authorization denies before file creation', async () => {
+    const before = writes;
     error(await exchange(form(), { authorization: 'denied' }), 'unauthorized'); assert.deepEqual(trace, ['auth']);
+    assert.equal(writes, before, 'denied request must not create a temporary file');
   });
   await check('malformed boundary', async () => {
     error(await exchange(wire().bytes, { ...headers(), 'content-type': 'multipart/form-data; boundary=wrong-boundary' }), 'invalid_body');
@@ -141,6 +156,9 @@ try {
   });
   await check('oversized file obeys CRPC limit', async () => {
     error(await exchange(form({ files: [Buffer.alloc(2048)] }), headers()), 'payload_too_large'); assert.ok(!trace.includes('handler'));
+  });
+  await check('headerless file limit reached during async authorization', async () => {
+    error(await exchange(form({ files: [Buffer.alloc(2048)] })), 'payload_too_large'); assert.deepEqual(trace, ['auth']);
   });
   await check('aggregate upload size limit', async () => {
     error(await exchange(form({ target: 'array', files: Array.from({ length: 5 }, () => Buffer.alloc(900)) }), headers('array')), 'payload_too_large');
@@ -161,6 +179,19 @@ try {
     await new Promise(resolve => originalSetTimeout(resolve, 100));
     await until(() => tempFiles().length === 0, 'partial upload files leaked after disconnect');
     assert.ok(!trace.includes('handler'));
+  });
+  await check('disconnect during delayed preflight cannot create late files or run a handler', async () => {
+    const body = wire(), before = writes;
+    const prefix = body.bytes.subarray(0, body.prefix.length + 64);
+    const client = http.request(base + '/rpc', { method: 'POST', agent: false, headers: { ...headers(), 'x-probe-auth-delay': 'true', 'content-type': body.type, 'content-length': body.bytes.length } });
+    client.on('error', () => {});
+    client.write(prefix);
+    await new Promise(resolve => originalSetTimeout(resolve, 30));
+    client.destroy();
+    await new Promise(resolve => originalSetTimeout(resolve, 150));
+    assert.equal(writes, before, 'no file may be written after the connection was already lost');
+    assert.ok(!trace.includes('handler'));
+    await until(() => tempFiles().length === 0, 'late temporary files leaked');
   });
   await check('repeated uploads after errors/disconnects', async () => {
     for (let n = 0; n < 5; n++) ok(await exchange(form(), headers()));
@@ -184,5 +215,6 @@ try {
   await stop(); await app.close();
   for (const timer of pendingTimers) originalClearTimeout(timer);
   globalThis.setTimeout = originalSetTimeout; globalThis.clearTimeout = originalClearTimeout;
+  fs.createWriteStream = originalCreateWriteStream; fs.promises.writeFile = originalWriteFile;
 }
 process.exit(failures ? 1 : 0);

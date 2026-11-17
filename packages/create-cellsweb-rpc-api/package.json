@@ -17,7 +17,7 @@
     "templates"
   ],
   "scripts": {
-    "test": "node --import tsx --test test/*.test.mjs"
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.mjs"
   },
   "keywords": [
     "rpc",

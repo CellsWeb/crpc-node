@@ -112,4 +112,12 @@ describe("multipart completion and interruption compatibility (CRPC-014)", () =>
     expect(req.listenerCount("close")).toBe(0);
     expect(req.listenerCount("error")).toBe(0);
   });
+  it("request already disconnected during preflight rejects before accessing a retired socket", async () => {
+    const req = Object.assign(new PassThrough(), { headers });
+    const closed = new Promise(resolve => req.once("close", resolve));
+    req.destroy();
+    await closed;
+    Object.defineProperty(req, "socket", { get() { throw new Error("Retired socket accessed"); } });
+    await expect(parseMultipartStream(req)).rejects.toMatchObject({ code: "invalid_body" });
+  });
 });

@@ -59,6 +59,11 @@ export async function parseMultipartStream(
 
   const rawReq = req.raw ?? req;
   const headers = req.headers ?? rawReq.headers ?? {};
+  // Preflight middleware may await while the peer disconnects. Do not access
+  // adapter socket getters or attach parsers to an already retired request.
+  if (rawReq.destroyed || rawReq.aborted || rawReq.res?.aborted) {
+    throw new AppError(ErrorCode.INVALID_BODY, "Client disconnected before multipart upload completed");
+  }
 
   const bb = busboy({
     headers,
@@ -74,88 +79,104 @@ export async function parseMultipartStream(
   return new Promise((resolve, reject) => {
     let totalBytesRead = 0;
     let aborted = false;
+    let requestClosed = false;
     const activeStreams = new Set<fs.WriteStream>();
     const filePromises: Promise<void>[] = [];
+    const requestSocket = rawReq.socket;
+    const disconnectSocket = typeof requestSocket?.on === "function"
+      ? requestSocket
+      : rawReq.res?.socket;
+    // Keep an explicit native HTTP completion flag authoritative. Readable
+    // adapters such as Ultimate Express omit it but do expose readableEnded.
+    const isRequestComplete = () => typeof rawReq.complete === "boolean"
+      ? rawReq.complete
+      : rawReq.readableEnded === true;
 
     const onReqClose = () => {
-      if (!rawReq.complete && !aborted) {
+      if (!isRequestComplete() && !aborted) {
+        requestClosed = true;
         abortAll(new AppError(ErrorCode.INVALID_BODY, "Client disconnected before multipart upload completed"));
       }
+    };
+    const onReqAborted = () => {
+      requestClosed = true;
+      abortAll(new AppError(ErrorCode.INVALID_BODY, "Client disconnected before multipart upload completed"));
     };
     const onReqError = (err: Error) => {
       abortAll(err);
     };
-
-    if (typeof rawReq.on === "function") {
-      rawReq.on("close", onReqClose);
-      rawReq.on("error", onReqError);
-    }
+    const cleanupRequestListeners = () => {
+      rawReq.removeListener?.("close", onReqClose);
+      rawReq.removeListener?.("error", onReqError);
+      rawReq.removeListener?.("aborted", onReqAborted);
+      disconnectSocket?.removeListener?.("close", onReqClose);
+    };
 
     const abortAll = (err: Error) => {
       if (aborted) return;
       aborted = true;
 
-      if (typeof rawReq.removeListener === "function") {
-        rawReq.removeListener("close", onReqClose);
-        rawReq.removeListener("error", onReqError);
-      }
+      cleanupRequestListeners();
 
       try {
         rawReq.unpipe(bb);
 
-        let drainedBytes = 0;
-        const MAX_DRAIN_BYTES = 512 * 1024; // 512KB drain ceiling allows HTTP error response flush
+        if (requestClosed || rawReq.destroyed || rawReq.aborted) {
+          rawReq.destroy?.();
+        } else if (!isRequestComplete() && !rawReq.readableEnded) {
+          let drainedBytes = 0;
+          const MAX_DRAIN_BYTES = 512 * 1024; // 512KB drain ceiling allows HTTP error response flush
 
-        let drainTimer: NodeJS.Timeout | undefined;
+          let drainTimer: NodeJS.Timeout | undefined;
 
-        const cleanupDrainListeners = () => {
-          if (drainTimer) {
-            clearTimeout(drainTimer);
-            drainTimer = undefined;
-          }
-          if (typeof rawReq.removeListener === "function") {
-            rawReq.removeListener("data", onDrainData);
-            rawReq.removeListener("end", onDrainDone);
-            rawReq.removeListener("close", onDrainDone);
-            rawReq.removeListener("error", onDrainDone);
-          }
-        };
-
-        const onDrainData = (chunk: Buffer) => {
-          drainedBytes += chunk ? chunk.length : 0;
-          if (drainedBytes > MAX_DRAIN_BYTES) {
-            cleanupDrainListeners();
-            if (typeof rawReq.destroy === "function") {
-              rawReq.destroy();
+          const cleanupDrainListeners = () => {
+            if (drainTimer) {
+              clearTimeout(drainTimer);
+              drainTimer = undefined;
             }
+            if (typeof rawReq.removeListener === "function") {
+              rawReq.removeListener("data", onDrainData);
+              rawReq.removeListener("end", onDrainDone);
+              rawReq.removeListener("close", onDrainDone);
+              rawReq.removeListener("error", onDrainDone);
+            }
+          };
+
+          const onDrainData = (chunk: Buffer) => {
+            drainedBytes += chunk ? chunk.length : 0;
+            if (drainedBytes > MAX_DRAIN_BYTES) {
+              cleanupDrainListeners();
+              if (typeof rawReq.destroy === "function") {
+                rawReq.destroy();
+              }
+            }
+          };
+
+          const onDrainDone = () => {
+            cleanupDrainListeners();
+          };
+
+          if (typeof rawReq.on === "function") {
+            rawReq.on("data", onDrainData);
+            rawReq.on("end", onDrainDone);
+            rawReq.on("close", onDrainDone);
+            rawReq.on("error", onDrainDone);
           }
-        };
 
-        const onDrainDone = () => {
-          cleanupDrainListeners();
-        };
-
-        if (typeof rawReq.on === "function") {
-          rawReq.on("data", onDrainData);
-          rawReq.on("end", onDrainDone);
-          rawReq.on("close", onDrainDone);
-          rawReq.on("error", onDrainDone);
-        }
-
-        if (typeof rawReq.resume === "function") {
-          rawReq.resume();
-        }
-
-        // Enforce 2000ms deadline to safely close socket if rejected request remains incomplete
-        drainTimer = setTimeout(() => {
-          cleanupDrainListeners();
-          if (!rawReq.complete && typeof rawReq.destroy === "function") {
-            try {
-              rawReq.destroy();
-            } catch {}
+          // Enforce 2000ms deadline to safely close socket if rejected request remains incomplete
+          drainTimer = setTimeout(() => {
+            cleanupDrainListeners();
+            if (!isRequestComplete() && typeof rawReq.destroy === "function") {
+              try {
+                rawReq.destroy();
+              } catch {}
+            }
+          }, 2000);
+          if (drainTimer.unref) drainTimer.unref();
+          if (typeof rawReq.resume === "function") {
+            rawReq.resume();
           }
-        }, 2000);
-        if (drainTimer.unref) drainTimer.unref();
+        }
       } catch {}
 
       for (const ws of activeStreams) {
@@ -168,6 +189,15 @@ export async function parseMultipartStream(
       cleanupTempFiles(tempFilesToCleanup);
       reject(err);
     };
+
+    if (typeof rawReq.on === "function") {
+      rawReq.on("close", onReqClose);
+      rawReq.on("error", onReqError);
+      rawReq.on("aborted", onReqAborted);
+    }
+    // Ultimate Express reports interrupted requests on its response socket,
+    // rather than emitting aborted/close on the request Readable itself.
+    disconnectSocket?.on?.("close", onReqClose);
 
     bb.on("filesLimit", () => {
       abortAll(new AppError(ErrorCode.PAYLOAD_TOO_LARGE, "Exceeded maximum allowed files limit (20)"));
@@ -251,6 +281,10 @@ export async function parseMultipartStream(
             fileStream.pause();
             if (typeof rawReq.pause === "function") rawReq.pause();
             await authPromise;
+            if (aborted) {
+              fileStream.resume();
+              return;
+            }
             preAuthVerified = true;
             if (typeof rawReq.resume === "function") rawReq.resume();
             fileStream.resume();
@@ -260,6 +294,14 @@ export async function parseMultipartStream(
             return;
           }
         }
+      }
+
+      // Busboy may have hit the limit synchronously while pre-file auth was
+      // awaiting; its limit event would precede the listeners installed below.
+      if (fileStream.truncated) {
+        fileStream.resume();
+        abortAll(new AppError(ErrorCode.PAYLOAD_TOO_LARGE, `File "${info.filename}" exceeds single file size limit of ${maxFile} bytes`));
+        return;
       }
 
       const { filename, mimeType } = info;
@@ -285,7 +327,12 @@ export async function parseMultipartStream(
 
       writeStream.on("finish", cleanupStream);
       writeStream.on("error", cleanupStream);
-      writeStream.on("close", cleanupStream);
+      writeStream.on("close", () => {
+        cleanupStream();
+        // An abort can precede fs.open. Retry unlink after close so a file
+        // created after the first cleanup attempt cannot be left behind.
+        if (aborted) cleanupTempFiles([savePath]);
+      });
 
       let fileByteLength = 0;
 
@@ -364,10 +411,7 @@ export async function parseMultipartStream(
       try {
         await Promise.all(filePromises);
         if (!aborted) {
-          if (typeof rawReq.removeListener === "function") {
-            rawReq.removeListener("close", onReqClose);
-            rawReq.removeListener("error", onReqError);
-          }
+          cleanupRequestListeners();
           resolve({ fields, files, tempFilesToCleanup });
         }
       } catch (err) {

@@ -58,8 +58,7 @@ export type Listener = ReturnType<typeof server.listen>['uwsApp'];
         const result = spawnSync(runtime, args, { cwd: project, env, encoding: 'utf8', timeout: 20_000 });
         assert.equal(result.status, 0, `${result.error ?? ''}\n${result.stdout}\n${result.stderr}`);
         assert.match(result.stdout, /HTTP JSON\/errors\/binary\/docs PASS/);
-        if (['fastify', 'ultimate-express'].includes(adapter)) t.diagnostic(result.stdout.trim());
-        else assert.match(result.stdout, /MULTIPART binary fidelity PASS/);
+        assert.match(result.stdout, /MULTIPART binary fidelity PASS/);
       });
     }
   });
