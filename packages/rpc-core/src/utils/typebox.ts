@@ -9,18 +9,18 @@ export const FilesKindSymbol = "FilesKind";
 export const FormNumKindSymbol = "FormNumKind";
 export const FormBoolKindSymbol = "FormBoolKind";
 
-// Register custom kinds with TypeBox so Value.Default / Value.Check / Value.Cast
-// don't throw "Unknown type" when they encounter File/Files schema fields.
-// Our own validateFileField() handles the actual file validation separately.
+// Keep physical file identity and limits in TypeBox branch checks as well as
+// direct-field validation, so a file branch cannot widen an entire union.
 if (!TypeRegistry.Has(FileKindSymbol)) {
-  TypeRegistry.Set(FileKindSymbol, (_schema, value) =>
-    value === undefined || value === null || value instanceof UploadedFile,
-  );
+  TypeRegistry.Set(FileKindSymbol, checkFileBranch);
 }
 if (!TypeRegistry.Has(FilesKindSymbol)) {
-  TypeRegistry.Set(FilesKindSymbol, (_schema, value) =>
-    value === undefined || value === null || Array.isArray(value),
-  );
+  TypeRegistry.Set(FilesKindSymbol, checkFileBranch);
+}
+
+function checkFileBranch(schema: TSchema, value: unknown): boolean {
+  try { validateFileField(value, schema, "File"); return true; }
+  catch { return false; }
 }
 
 export interface FileSchemaOptions {
@@ -242,27 +242,15 @@ export function validateFileField(value: unknown, schema: TSchema, fieldPath: st
   }
 }
 
-function isOptionalSchema(schema: TSchema): boolean {
-  return (schema as any)[Symbol.for("TypeBox.Optional")] === "Optional";
-}
-
-/**
- * Replace File/Files kind nodes in a schema with Type.Any() (or Type.Optional(Type.Any()))
- * so TypeBox's Value/TypeCompiler module doesn't reject custom symbols. Our validateFileField()
- * handles the actual per-field file validation before we reach TypeBox operations.
- */
+// Normalize the form helper union kinds while retaining every declared branch,
+// constraint, default and transform. File kinds are handled by TypeRegistry.
 function sanitizeSchemaForTypebox(schema: TSchema): TSchema {
   if (isFileSchema(schema) || isFilesSchema(schema)) {
-    return isOptionalSchema(schema) ? Type.Optional(Type.Any()) : Type.Any();
+    return { ...schema, [Kind]: isFilesSchema(schema) ? FilesKindSymbol : FileKindSymbol };
   }
   if (Array.isArray((schema as any).anyOf)) {
     const variants: TSchema[] = (schema as any).anyOf;
-    const nonFile = variants.filter((v) => !isFileSchema(v) && !isFilesSchema(v));
-    const target =
-      nonFile.length > 0
-        ? Type.Union([...nonFile.map(sanitizeSchemaForTypebox), Type.Any()])
-        : Type.Any();
-    return isOptionalSchema(schema) ? Type.Optional(target) : target;
+    return { ...schema, [Kind]: "Union", anyOf: variants.map(sanitizeSchemaForTypebox) };
   }
   if (Array.isArray((schema as any).allOf)) {
     return {
@@ -284,6 +272,55 @@ function sanitizeSchemaForTypebox(schema: TSchema): TSchema {
     return { ...schema, properties: sanitizedProps } as TSchema;
   }
   return schema;
+}
+
+function containsFile(value: unknown, seen = new WeakSet<object>()): boolean {
+  if (value instanceof UploadedFile) return true;
+  if (value === null || typeof value !== "object" || seen.has(value)) return false;
+  seen.add(value);
+  return Object.values(value).some(child => containsFile(child, seen));
+}
+
+function clonePreservingFiles(value: unknown): unknown {
+  if (value instanceof UploadedFile) return value;
+  if (Array.isArray(value)) return value.map(clonePreservingFiles);
+  if (value !== null && typeof value === "object" && containsFile(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, clonePreservingFiles(child)]));
+  }
+  return Value.Clone(value);
+}
+
+// TypeBox's union defaults clone each candidate, which strips UploadedFile's
+// prototype. Keep files opaque while choosing a defaulted branch. Ordinary JSON
+// continues through TypeBox unchanged; transforms still decode only once below.
+function defaultsPreservingFiles(schema: TSchema, value: unknown): unknown {
+  if (!containsFile(value) || isFileSchema(schema) || isFilesSchema(schema)) return Value.Default(schema, value);
+  if (Array.isArray(schema.anyOf)) {
+    for (const branch of schema.anyOf as TSchema[]) {
+      const candidate = defaultsPreservingFiles(branch, clonePreservingFiles(value));
+      if (Value.Check(branch, candidate)) return candidate;
+    }
+    return value; // The normal check below reports the invalid union.
+  }
+  let prepared = value;
+  if (Array.isArray(schema.allOf)) {
+    for (const branch of schema.allOf as TSchema[]) prepared = defaultsPreservingFiles(branch, prepared);
+  }
+  if (schema.type === "object" && schema.properties && prepared !== null && typeof prepared === "object" && !Array.isArray(prepared)) {
+    const object = { ...prepared } as Record<string, unknown>;
+    for (const [key, branch] of Object.entries(schema.properties as Record<string, TSchema>)) {
+      const defaulted = defaultsPreservingFiles(branch, object[key]);
+      if (defaulted !== undefined || Object.hasOwn(object, key)) Object.defineProperty(object, key, { value: defaulted, enumerable: true, configurable: true, writable: true });
+    }
+    prepared = object;
+  } else if (schema.type === "array" && Array.isArray(prepared) && schema.items) {
+    const items = schema.items;
+    prepared = prepared.map((entry, index) => {
+      const branch = Array.isArray(items) ? items[index] : items;
+      return branch ? defaultsPreservingFiles(branch, entry) : entry;
+    });
+  }
+  return Value.Default(schema, prepared);
 }
 
 interface CompiledEntry {
@@ -343,7 +380,7 @@ export function validateSchema<T>(
     }
   }
 
-  const objData = typeof data === "object" && data !== null && !Array.isArray(data)
+  const objData = typeof data === "object" && data !== null && !Array.isArray(data) && !(data instanceof UploadedFile)
     ? { ...(data as Record<string, unknown>) }
     : null;
 
@@ -379,16 +416,11 @@ export function validateSchema<T>(
         }
       } else if (Array.isArray((propSchema as any).anyOf)) {
         const variants: TSchema[] = (propSchema as any).anyOf;
-        const fileVariant = variants.find((v) => isFileSchema(v) || isFilesSchema(v));
-        if (fileVariant && val instanceof UploadedFile) {
-          let targetVal: unknown = val;
-          if (isFilesSchema(fileVariant)) {
-            const arr = [val];
-            targetVal = arr;
-            objData[key] = arr;
-            fileInstances.set(key, arr);
-          }
-          validateFileField(targetVal, fileVariant, key);
+        const fileVariants = variants.filter((v) => isFileSchema(v) || isFilesSchema(v));
+        if (val instanceof UploadedFile && fileVariants.length > 0 && fileVariants.every(isFilesSchema)) {
+          const arr = [val];
+          objData[key] = arr;
+          fileInstances.set(key, arr);
         }
       }
     }
@@ -396,7 +428,7 @@ export function validateSchema<T>(
 
   const { safeSchema, check } = getOrCompileSchema(schema);
   const targetData = objData !== null ? objData : data;
-  const withDefaults = Value.Default(safeSchema, targetData);
+  const withDefaults = defaultsPreservingFiles(safeSchema, targetData);
 
   if (!check.Check(withDefaults)) {
     const errors = [...check.Errors(withDefaults)];
