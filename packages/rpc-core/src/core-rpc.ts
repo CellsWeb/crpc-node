@@ -651,6 +651,16 @@ export class CoreRPC {
         pluginOptions.healthEndpoint ?? this.options.healthEndpoint ?? "/health",
       );
 
+      if (!fastify.hasContentTypeParser("multipart/form-data")) {
+        // Hand off without reading the stream: CRPC's Busboy parser owns
+        // multipart limits and authorization-before-file-write behavior.
+        fastify.addContentTypeParser("multipart/form-data", (
+          _request: unknown,
+          _payload: unknown,
+          done: (error: Error | null) => void,
+        ) => done(null));
+      }
+
       const routeHandler = async (req: any, reply: any) => {
         if (req.raw && req.body !== undefined) {
           req.raw.body = req.body;

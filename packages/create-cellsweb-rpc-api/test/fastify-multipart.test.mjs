@@ -67,7 +67,7 @@ test('Fastify hands off before EOF: CRPC rejects a file limit on an unfinished s
   const f = await fixture(t);
   const prefix = '--stream\r\nContent-Disposition: form-data; name="namespace"\r\n\r\nprobe\r\n--stream\r\nContent-Disposition: form-data; name="functionName"\r\n\r\nupload\r\n--stream\r\nContent-Disposition: form-data; name="file"; filename="large.bin"\r\nContent-Type: application/octet-stream\r\n\r\n';
   const result = await new Promise((resolve, reject) => {
-    const request = http.request(f.base + '/rpc', { method: 'POST', headers: { 'content-type': 'multipart/form-data; boundary=stream', 'content-length': 100_000 } }, response => {
+    const request = http.request(f.base + '/rpc', { method: 'POST', headers: { 'content-type': 'multipart/form-data; boundary=stream', 'content-length': 100_000, 'x-crpc-namespace': 'probe', 'x-crpc-function': 'upload' } }, response => {
       let body = ''; response.setEncoding('utf8'); response.on('data', chunk => { body += chunk; });
       response.on('end', () => { request.destroy(); resolve({ status: response.statusCode, body: JSON.parse(body) }); });
     });
