@@ -129,7 +129,6 @@ import { File, Files } from "@cellsweb/rpc-core";
 
 export const metadata = {
   description: "${descriptionStr}",
-  isPublic: ${ns.startsWith("public")},
   deprecated: false,
   tags: ["upload"] as string[],
 };
@@ -170,7 +169,6 @@ import { Type } from "@sinclair/typebox";
 
 export const metadata = {
   description: "${descriptionStr}",
-  isPublic: ${ns.startsWith("public")},
   deprecated: false,
   tags: [] as string[],
 };

@@ -72,7 +72,7 @@ export interface CoreRpcOptions {
 | `middlewaresDir` | `string` | `"./src/middlewares"` | Absolute or relative filesystem path to the directory containing middleware definitions. |
 | `port` | `number` | `4000` | TCP port for the server listener when invoking `app.start()`. |
 | `host` | `string` | `"0.0.0.0"` | Network interface to bind to. Set to `"127.0.0.1"` for loopback-only access. |
-| `docs` | `boolean` | `true` | Enables or disables the zero-config server-rendered documentation portal. |
+| `docs` | `boolean` | environment-dependent | Enables or disables the zero-config server-rendered documentation portal. |
 | `rpcEndpoint` | `string` | `"/rpc"` | URL pathname designated for RPC `POST` dispatches. |
 | `docsEndpoint` | `string` | `"/docs"` | URL pathname designated for the interactive documentation interface. |
 | `healthEndpoint`| `string` | `"/health"` | URL pathname designated for health probe endpoints (returns `{ status: "ok" }`). |
@@ -369,3 +369,12 @@ export class RpcError extends Error {
 | `internal_error` | `500 Server Error` | Unhandled handler exception or middleware failure. |
 | `timeout` | `504 Gateway Timeout` | Execution exceeded configured timeout duration. |
 | `aborted` | `499 Client Closed` | Request aborted via `AbortSignal`. |
+
+
+### Deprecated metadata compatibility
+
+`FunctionMetadata.isPublic?: boolean` is deprecated and ignored. It has no
+function-visibility, documentation-visibility, authentication or authorization
+meaning. Existing typed code may retain it until a future major release; new
+generators omit it. Authentication belongs to middleware, and docs are controlled
+globally. See [Interactive documentation](interactive-docs.md).

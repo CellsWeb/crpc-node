@@ -136,7 +136,6 @@ import { File, Files } from "@cellsweb/rpc-core";
 
 export const metadata = {
   description: "${descriptionStr}",
-  isPublic: ${ns.startsWith("public")},
   deprecated: false,
   tags: ["upload"] as string[],
 };
@@ -173,7 +172,7 @@ export const outputSchema = Type.Object({
  * SCHEMA & CONTRACT DEFINITION
  *
  * WHAT TO TOUCH:
- *  - metadata: Description, public access, tags.
+ *  - metadata: Description, deprecation, tags.
  *  - contentType: "application/json" (default).
  *  - inputSchema: Define fields expected in req.body.data. Include description in Type properties!
  *  - outputSchema: Define structure returned by run(). Include description in Type properties!
@@ -183,7 +182,6 @@ import { Type } from "@sinclair/typebox";
 
 export const metadata = {
   description: "${descriptionStr}",
-  isPublic: ${ns.startsWith("public")},
   deprecated: false,
   tags: [] as string[],
 };

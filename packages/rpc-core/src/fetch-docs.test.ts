@@ -83,7 +83,7 @@ describe.each(["/docs", "/custom/reference"])("Fetch/native documentation at %s"
         expect(body).toContain(`function_input_marker_${name}`);
         expect(body).toContain(`function_output_marker_${name}`);
         expect(body).not.toContain(name === "lookup" ? "function_input_marker_restricted" : "function_input_marker_lookup");
-        expect(body).toContain(name === "lookup" ? ">PUBLIC</span>" : ">PRIVATE</span>");
+        expect(body).not.toMatch(/>(PUBLIC|PRIVATE)<\/span>/);
         expect(body).toContain(`${base}/api/rpc`);
         expect(body).toContain(`href="${docsPath}"`);
       }
@@ -106,7 +106,7 @@ describe.each(["/docs", "/custom/reference"])("Fetch/native documentation at %s"
         expect(body).toContain("<title>⚡ guard — Middleware Docs</title>");
         expect(body).toContain("CENTRAL MIDDLEWARE");
         expect(body).toContain("Options JSON Schema");
-        expect(body).toContain("Required Headers JSON Schema");
+        expect(body).toContain("Headers JSON Schema");
         expect(body).toContain("middleware_options_marker");
         expect(body).toContain("middleware_headers_marker");
         expect(body).not.toContain("function_input_marker_");

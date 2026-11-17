@@ -50,7 +50,7 @@ describe("CellsWeb RPC API Boilerplate Suite", () => {
     fs.writeFileSync(
       path.join(echoDir, "constants.ts"),
       `import { Type } from "@sinclair/typebox";
-       export const metadata = { description: "echo", isPublic: true };
+       export const metadata = { description: "echo" };
        export const contentType = "application/json";
        export const inputSchema = Type.Object({ message: Type.String({ minLength: 2 }) });
        export const outputSchema = Type.Object({ reply: Type.String() });`,

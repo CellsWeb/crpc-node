@@ -4,7 +4,7 @@
  * SCHEMA & CONTRACT DEFINITION
  *
  * WHAT TO TOUCH:
- *  - metadata: Description, public access, tags.
+ *  - metadata: Description, deprecation, tags.
  *  - contentType: "application/json" (default).
  *  - inputSchema: Define fields expected in req.body.data. Include description in Type properties!
  *  - outputSchema: Define structure returned by run(). Include description in Type properties!
@@ -14,7 +14,6 @@ import { Type } from "@sinclair/typebox";
 
 export const metadata = {
   description: "TODO: describe create",
-  isPublic: false,
   deprecated: false,
   tags: [] as string[],
 };

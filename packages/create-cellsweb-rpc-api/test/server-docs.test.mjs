@@ -57,8 +57,8 @@ for (const adapter of adapters) {
           assert.equal(observed.rpcStatus, 'ok', 'docs configuration must not disable execution');
           assert.equal(observed.registered, 2, 'badge values must not affect registry membership');
           if (scenario.enabled) {
-            assert.equal(observed.privateBadge, true);
-            assert.equal(observed.publicBadge, true);
+            assert.equal(observed.privateBadge, false);
+            assert.equal(observed.publicBadge, false);
             assert.equal(observed.detailSchema, true);
           }
         });

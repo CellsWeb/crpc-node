@@ -8,6 +8,7 @@ import { logSystemError } from "./logger";
 
 export interface FunctionMetadata {
   description?: string;
+  /** @deprecated Ignored. Has no documentation visibility, authentication or authorization meaning. Retained for source compatibility until a future major release. */
   isPublic?: boolean;
   deprecated?: boolean;
   tags?: string[];

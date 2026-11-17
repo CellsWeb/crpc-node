@@ -3,7 +3,6 @@ import { File, Files } from "@cellsweb/rpc-core";
 
 export const metadata = {
   description: "Handles binary file uploads and metadata persistence",
-  isPublic: true,
   deprecated: false,
   tags: ["files", "benchmark"] as string[],
 };

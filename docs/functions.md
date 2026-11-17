@@ -122,3 +122,12 @@ This maps to:
 - **Namespace**: `admin.catalog.brands`
 - **Function**: `list`
 - **Identifier**: `admin.catalog.brands.list`
+
+
+### Deprecated metadata compatibility
+
+`FunctionMetadata.isPublic?: boolean` is deprecated and ignored. It has no
+function-visibility, documentation-visibility, authentication or authorization
+meaning. Existing typed code may retain it until a future major release; new
+generators omit it. Authentication belongs to middleware, and docs are controlled
+globally. See [Interactive documentation](interactive-docs.md).

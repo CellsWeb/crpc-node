@@ -8,7 +8,6 @@ import { Type } from "@sinclair/typebox";
 
 export const metadata = {
   description: "Sample hello JSON RPC function",
-  isPublic: true,
   deprecated: false,
   tags: ["sample"],
 };

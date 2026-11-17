@@ -549,78 +549,52 @@ function render2ColumnSchemaSection(
   `;
 }
 
+// Documentation is a public projection, never a view into configured middleware
+// values. Omit value annotations and private extensions, including nested ones.
+function middlewareSchemaForDocs(schema?: TSchema): unknown {
+  const keywords = new Set([
+    "type", "title", "description", "format", "properties", "patternProperties", "items", "prefixItems",
+    "required", "additionalProperties", "allOf", "anyOf", "oneOf", "not", "contains", "if", "then", "else",
+    "$ref", "$defs", "definitions", "propertyNames", "dependentRequired", "dependentSchemas",
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "pattern",
+    "minItems", "maxItems", "uniqueItems", "minProperties", "maxProperties", "maxCount", "maxSizeBytes", "mimeTypes",
+  ]);
+  const schemaMaps = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]);
+  const project = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(project);
+    if (!node || typeof node !== "object") return node;
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (!keywords.has(key)) continue;
+      if (schemaMaps.has(key) && value && typeof value === "object") {
+        result[key] = Object.fromEntries(Object.entries(value).map(([name, child]) => [name, project(child)]));
+      } else if (key === "dependentRequired") {
+        result[key] = value;
+      } else result[key] = project(value);
+    }
+    return result;
+  };
+  return project(typeboxToJsonSchemaObject(schema));
+}
+
 function renderMiddlewareCardContent(
   mwName: string,
   rawDescription: string,
-  optsConfigured: Record<string, unknown> | undefined,
   centralMw: RegisteredMiddleware | undefined,
-  isGlobalView = false,
+  docsEndpoint: string,
 ): string {
-  const optsSchemaObj = typeboxToJsonSchemaObject(centralMw?.optionsSchema) as any;
-  const headersSchemaObj = typeboxToJsonSchemaObject(centralMw?.headersSchema) as any;
-
-  const optProps = optsSchemaObj?.properties ?? {};
-  const headerProps = headersSchemaObj?.properties ?? {};
-
-  // 1. Properties & Controls List
-  let propsListHtml = "";
-  const propKeys = Object.keys(optProps);
-  if (propKeys.length > 0) {
-    const items = propKeys.map((key) => {
-      const pSchema = optProps[key] ?? {};
-      const desc = pSchema.description ?? pSchema.title ?? "";
-      const defaultVal = pSchema.default !== undefined ? JSON.stringify(pSchema.default) : undefined;
-      const configuredVal = optsConfigured?.[key] !== undefined ? JSON.stringify(optsConfigured[key]) : undefined;
-
-      let displayVal = configuredVal;
-      let isDefaultTag = false;
-      if (displayVal === undefined) {
-        displayVal = defaultVal ?? "-";
-        isDefaultTag = isGlobalView && defaultVal !== undefined;
-      }
-
-      return `<li class="mw-list-item">
-        <span class="mw-list-bullet">•</span>
-        <span class="mw-prop-key">${escHtml(key)}:</span>
-        <span class="mw-prop-val">${escHtml(displayVal)}${isDefaultTag ? ' <span style="font-size:10px;color:var(--muted)">(default)</span>' : ''}</span>
-        ${desc ? ` <span class="mw-prop-desc">— ${escHtml(desc)}</span>` : ""}
-      </li>`;
-    });
-    propsListHtml = `<ul class="mw-list">${items.join("")}</ul>`;
-  } else {
-    propsListHtml = `<div style="color:var(--muted);font-size:12.5px;margin-top:4px">• None (No configurable options)</div>`;
-  }
-
-  // 2. Required Headers List
-  let headersListHtml = "";
-  const headerKeys = Object.keys(headerProps);
-  if (headerKeys.length > 0) {
-    const items = headerKeys.map((key) => {
-      const hSchema = headerProps[key] ?? {};
-      const desc = hSchema.description ?? hSchema.title ?? "HTTP Header value";
-      return `<li class="mw-list-item">
-        <span class="mw-list-bullet">•</span>
-        <span class="mw-prop-key">${escHtml(key)}</span>
-        <span class="mw-prop-desc">— ${escHtml(desc)}</span>
-      </li>`;
-    });
-    headersListHtml = `<ul class="mw-list">${items.join("")}</ul>`;
-  } else {
-    headersListHtml = `<div style="color:var(--muted);font-size:12.5px;margin-top:4px">• None (No headers required)</div>`;
-  }
-
+  const optsSchema = middlewareSchemaForDocs(centralMw?.optionsSchema);
+  const headersSchema = middlewareSchemaForDocs(centralMw?.headersSchema);
   return `
     <div class="mw-card">
       <div class="mw-header">
-        <a href="/docs/middlewares/${escHtml(mwName)}" style="text-decoration:none"><div class="mw-name">⚡ ${escHtml(mwName)}</div></a>
+        <a href="${normalizeDocsEndpoint(docsEndpoint)}/middlewares/${escHtml(mwName)}" style="text-decoration:none"><div class="mw-name">⚡ ${escHtml(mwName)}</div></a>
       </div>
       <div class="mw-desc">${escHtml(rawDescription)}</div>
-      
       <div class="mw-sub-title">Properties & Controls:</div>
-      ${propsListHtml}
-
-      <div class="mw-sub-title">Required Headers:</div>
-      ${headersListHtml}
+      ${optsSchema ? renderSchemaFieldsList(optsSchema) : '<div style="color:var(--muted);font-size:12.5px">No option schema provided. Configured values are not displayed.</div>'}
+      <div class="mw-sub-title">HTTP Headers:</div>
+      ${headersSchema ? renderSchemaFieldsList(headersSchema) : '<div style="color:var(--muted);font-size:12.5px">No header schema provided.</div>'}
     </div>
   `;
 }
@@ -672,7 +646,6 @@ export function renderDocsIndex(
             <div class="fn-card-name">${escHtml(fn.functionName)}</div>
             ${metadata.description ? `<div class="fn-card-desc">${escHtml(metadata.description)}</div>` : ""}
             <div class="fn-card-meta">
-              ${metadata.isPublic ? '<span class="badge badge-green">PUBLIC</span>' : '<span class="badge badge-gray">PRIVATE</span>'}
               ${metadata.deprecated ? '<span class="badge badge-yellow">DEPRECATED</span>' : ""}
               <span class="badge badge-purple">${escHtml(fn.contentType)}</span>
               <span class="badge badge-gray">${escHtml(mwSubtitle)}</span>
@@ -700,7 +673,7 @@ export function renderDocsIndex(
 
     for (const mw of middlewares) {
       const rawDesc = mw.metadata?.description ?? `Custom ${mw.name} middleware`;
-      body += renderMiddlewareCardContent(mw.name, rawDesc, undefined, mw, true);
+      body += renderMiddlewareCardContent(mw.name, rawDesc, mw, normDocs);
     }
 
     body += `</div></div>`;
@@ -840,8 +813,8 @@ export function renderMiddlewareDoc(
   const normDocs = normalizeDocsEndpoint(docsEndpoint);
   const rawDesc = mw.metadata?.description ?? `Custom ${mw.name} middleware`;
 
-  const headersSchemaObj = typeboxToJsonSchemaObject(mw.headersSchema);
-  const optionsSchemaObj = typeboxToJsonSchemaObject(mw.optionsSchema);
+  const headersSchemaObj = middlewareSchemaForDocs(mw.headersSchema);
+  const optionsSchemaObj = middlewareSchemaForDocs(mw.optionsSchema);
 
   let body = `
     <div class="page-header">
@@ -859,7 +832,7 @@ export function renderMiddlewareDoc(
   `;
 
   body += `<div class="section"><div class="section-title">Middleware Specification</div>`;
-  body += renderMiddlewareCardContent(mw.name, rawDesc, undefined, mw, true);
+  body += renderMiddlewareCardContent(mw.name, rawDesc, mw, normDocs);
   body += `</div>`;
 
   if (optionsSchemaObj) {
@@ -874,7 +847,7 @@ export function renderMiddlewareDoc(
   if (headersSchemaObj) {
     body += `
       <div class="section">
-        <div class="section-title">Required Headers JSON Schema</div>
+        <div class="section-title">Headers JSON Schema</div>
         ${codeBlock(JSON.stringify(headersSchemaObj, null, 2))}
       </div>
     `;
@@ -927,10 +900,9 @@ export function renderFunctionDoc(
 
   for (const mwItem of fn.middlewares) {
     const centralMw = registry.middlewares.get(mwItem.name);
-    const optsObj = mwItem.options ?? {};
     const rawDesc = centralMw?.metadata?.description ?? `Custom ${mwItem.name} middleware`;
 
-    middlewareCards.push(renderMiddlewareCardContent(mwItem.name, rawDesc, optsObj, centralMw, false));
+    middlewareCards.push(renderMiddlewareCardContent(mwItem.name, rawDesc, centralMw, normDocs));
 
     // Collect headers required by this middleware
     if (centralMw?.headersSchema) {
@@ -938,6 +910,7 @@ export function renderFunctionDoc(
       const headersProps = schemaObj?.properties ?? {};
 
       for (const [headerKey, propSchema] of Object.entries<any>(headersProps)) {
+        if (!(schemaObj.required ?? []).includes(headerKey)) continue;
         const keyLower = headerKey.toLowerCase();
         const existing = requiredHeadersMap.get(keyLower) ?? { requiredBy: [] };
         if (!existing.requiredBy.includes(mwItem.name)) {
@@ -957,7 +930,7 @@ export function renderFunctionDoc(
   const curlCmd =
     fn.contentType === "multipart/form-data"
       ? `curl -X POST "${fullRpcUrl}" \\
-  -F "namespace=${fn.namespace}" \\
+  ${curlHeaders ? curlHeaders + " \\\n  " : ""}-F "namespace=${fn.namespace}" \\
   -F "functionName=${fn.functionName}" \\
   -F "title=Example Title" \\
   -F "file=@/path/to/file.jpg"`
@@ -975,7 +948,6 @@ export function renderFunctionDoc(
       <div class="page-title">${escHtml(fn.functionName)}</div>
       ${metadata.description ? `<div class="page-sub">${escHtml(metadata.description)}</div>` : ""}
       <div class="info-row" style="margin-top:14px">
-        ${metadata.isPublic ? '<span class="badge badge-green">PUBLIC</span>' : '<span class="badge badge-gray">PRIVATE</span>'}
         ${metadata.deprecated ? '<span class="badge badge-yellow">DEPRECATED</span>' : ""}
         <span class="badge badge-purple">${escHtml(fn.contentType)}</span>
         ${tags}

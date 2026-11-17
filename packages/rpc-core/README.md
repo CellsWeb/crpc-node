@@ -123,7 +123,7 @@ const app = new CoreRPC({
   host: "0.0.0.0",                     // default: "0.0.0.0"
   rpcEndpoint: "/rpc",                 // default: "/rpc" (also handles /api)
   docsEndpoint: "/docs",               // default: "/docs"
-  docs: true,                          // default: true
+  docs: true,                          // explicit override; default is environment-dependent
 });
 
 await app.start();
@@ -356,7 +356,6 @@ import { Type } from "@sinclair/typebox";
 
 export const metadata = {
   description: "Get user details by ID",
-  isPublic: true,
   tags: ["users"],
 };
 
@@ -404,7 +403,6 @@ import { File } from "@cellsweb/rpc-core";
 
 export const metadata = {
   description: "Upload profile avatar image",
-  isPublic: true,
   tags: ["uploads"],
 };
 
@@ -528,13 +526,13 @@ Accepts `"true"`/`"false"` (string from FormData) **and** `true`/`false` (native
 ```ts
 import { FormBool } from "@cellsweb/rpc-core";
 
-isPublic:  FormBool(),   // "true"  → true  |  true  → true
+published: FormBool(),   // "true"  → true  |  true  → true
 isDeleted: FormBool(),   // "false" → false |  false → false
 ```
 
 In `run.ts`, TypeScript type is `boolean`:
 ```ts
-if (data.isPublic) { ... }   // ✅ works directly
+if (data.published) { ... }   // ✅ works directly
 ```
 
 > [!NOTE]
@@ -800,3 +798,15 @@ pnpm create cellsweb-rpc-api@latest my-app
 ## License
 
 MIT © Minhazur Rahman
+
+
+### Deprecated documentation metadata
+
+`FunctionMetadata.isPublic` remains an optional compatibility property but is
+**deprecated and ignored**. It never grants or denies RPC access. It has no effect
+on documentation visibility, and PUBLIC/PRIVATE badges are no longer displayed.
+New generators omit it. Use middleware for authentication/authorization and the
+existing global `docs` option for documentation availability. Middleware docs show
+public schema structure and descriptions, not configured values or schema value
+annotations (defaults, examples, literal/enum values). Keep secrets out of public
+metadata descriptions. No replacement visibility flag is introduced.

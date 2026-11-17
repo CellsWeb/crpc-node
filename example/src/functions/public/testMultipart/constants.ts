@@ -15,7 +15,6 @@ import { File, Files } from "@cellsweb/rpc-core";
 
 export const metadata = {
   description: "TODO: describe testMultipart",
-  isPublic: true,
   deprecated: false,
   tags: ["upload"] as string[],
 };

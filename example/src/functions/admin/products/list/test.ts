@@ -57,11 +57,10 @@ describe("RPC Security & Execution Audit: admin.products.list", () => {
     });
 
     it("enforces security guards and blocks unprivileged access", async () => {
-      if (!metadata.isPublic) {
-        const guestActor = await createTestActor({ role: "unprivileged_guest" });
-        const res = await guestActor.callRaw("admin.products.list", { example: "Unauthorized attempt" });
-        expect(res.status).toBeDefined();
-      }
+      // Access control is defined by the attached middleware, not metadata.
+      const guestActor = await createTestActor({ role: "unprivileged_guest" });
+      const res = await guestActor.callRaw("admin.products.list", { example: "Unauthorized attempt" });
+      expect(res.status).toBeDefined();
     });
   });
 

@@ -9,6 +9,7 @@ import { CoreRPC } from "./core-rpc";
 import { renderDocsHtml } from "./docs/renderer";
 import type { FunctionMetadata } from "./registry";
 import { scaffoldFunction } from "./scaffold";
+import { AppError, ErrorCode } from "./errors";
 
 describe.each(["SDK", "core CLI", "create CLI"])("%s generates metadata without legacy flags", provider => {
   it.each(["json", "multipart"])("%s function", async contentType => {
@@ -27,7 +28,10 @@ describe("documentation cleanup and middleware parity", () => {
   const configuredSecret = "CONFIGURED_SECRET_MUST_NOT_APPEAR";
   const schemaSecret = "SCHEMA_SECRET_MUST_NOT_APPEAR";
   const run = vi.fn(async () => ({ ok: true }));
-  const middleware = vi.fn(async (_params, context) => context);
+  const middleware = vi.fn(async (params, context) => {
+    if (params.headers.authorization !== "Bearer allowed") throw new AppError(ErrorCode.UNAUTHORIZED, "Denied");
+    return context;
+  });
   const optionsSchema = Type.Object({
     secret: Type.String({ default: schemaSecret, examples: [schemaSecret], description: "Option description marker" }),
     credentials: Type.Optional(Type.Object({ key: Type.String({ default: schemaSecret, description: "Nested option marker" }) })),
@@ -92,5 +96,27 @@ describe("documentation cleanup and middleware parity", () => {
     entry.middlewares = [{ name: "guard", get options() { throw new Error("Configured values inspected"); } }];
     try { expect(() => renderDocsHtml(registry, base, "/reference/api/catalog/omitted", "/rpc", "/reference/api")).not.toThrow(); }
     finally { entry.middlewares = original; }
+  });
+  it("multipart cURL includes required header placeholders without optional headers", async () => {
+    const registry = await app.getRegistry();
+    const entry = registry.functions.get("catalog.omitted")!;
+    const original = entry.contentType;
+    entry.contentType = "multipart/form-data";
+    try {
+      const html = renderDocsHtml(registry, base, "/reference/api/catalog/omitted", "/rpc", "/reference/api");
+      expect(html).toContain("YOUR_AUTHORIZATION"); expect(html).not.toContain("YOUR_X_TRACE");
+      expect(html).toContain('-F &quot;namespace=catalog&quot;');
+    } finally { entry.contentType = original; }
+  });
+  it("legacy metadata never changes authorization or RPC execution", async () => {
+    try {
+      for (const name of ["omitted", "legacyTrue", "legacyFalse"]) {
+        const call = (token: string) => fetch(base + "/rpc", { method: "POST", headers: { "content-type": "application/json", authorization: token }, body: JSON.stringify({ namespace: "catalog", functionName: name, data: { name: "caller" } }) });
+        const allowed = await call("Bearer allowed"); expect(allowed.status).toBe(200); expect((await allowed.json()).data).toEqual({ ok: true });
+        const count = run.mock.calls.length;
+        const denied = await call("denied"); expect(denied.status).toBe(200); expect((await denied.json()).code).toBe("unauthorized");
+        expect(run.mock.calls.length).toBe(count);
+      }
+    } finally { run.mockClear(); middleware.mockClear(); }
   });
 });

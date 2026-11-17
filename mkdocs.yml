@@ -64,6 +64,7 @@ nav:
       - Middlewares & Pipeline: middlewares.md
       - Multi-Threading (Workers): workers.md
       - Framework Adapters: adapters.md
+      - Interactive Documentation: interactive-docs.md
   - Client SDK & React:
       - Universal Client & Hooks: client.md
       - File Uploads & Multipart: uploads.md
