@@ -22,7 +22,7 @@
     "url": "https://github.com/CellsWeb/crpc-node.git"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

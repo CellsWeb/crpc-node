@@ -217,7 +217,7 @@ async function main() {
       "create:middleware": "crpc create:middleware",
     },
     engines: {
-      node: ">=20.0.0",
+      node: ">=24.0.0",
     },
     dependencies: {
       "@cellsweb/rpc-core": "^1.0.33",

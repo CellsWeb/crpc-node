@@ -49,5 +49,8 @@
     "tsx": "^4.22.0",
     "typescript": "^7.0.2",
     "ultimate-express": "^2.2.4"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }
