@@ -220,7 +220,7 @@ async function main() {
       node: ">=24.0.0",
     },
     dependencies: {
-      "@cellsweb/rpc-core": "^1.0.33",
+      "@cellsweb/rpc-core": "^1.0.34",
       "@aws-sdk/client-s3": "^3.700.0",
       "@paralleldrive/cuid2": "^2.2.2",
       "@sentry/node": "^8.40.0",
