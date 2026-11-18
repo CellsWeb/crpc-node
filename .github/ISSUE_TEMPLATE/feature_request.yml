@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a focused improvement before changing contracts
+title: "[Proposal]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Read the [contribution guide](https://github.com/CellsWeb/crpc-node/blob/main/CONTRIBUTING.md). Keep this public proposal free of security-sensitive details."
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and use case
+      description: Explain who needs this and a concrete scenario.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and alternatives
+      description: Describe the smallest useful change and existing approaches considered.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and runtime impact
+      description: Identify Node/Go implications, public API/default/wire changes, authorization, schemas, uploads and IPC. Describe migration needs.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation approach
+      description: Which examples and tests would show that the proposal works without breaking existing users?

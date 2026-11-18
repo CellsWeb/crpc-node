@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible, nonsensitive bug
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, use the [security policy](https://github.com/CellsWeb/crpc-node/security/policy). Do not include private credentials, customer data or exploit details here."
+  - type: input
+    id: versions
+    attributes:
+      label: Package/module versions and runtime
+      description: Include installed versions, Node/Bun/Go/TypeScript, operating system and architecture.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide sanitized source, setup commands, transport/adapter and exact request or input.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected and actual behavior
+      description: Include HTTP status and full sanitized RPC envelope; explain relevant schema/middleware behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Tests, logs and cross-runtime comparison
+      description: Include exact commands/outcomes and baseline/first affected version if known. State which peer runtime was tested.
