@@ -58,3 +58,12 @@ For source development: `pnpm install`, `pnpm build`, `pnpm typecheck`, `pnpm te
 Seven-adapter HTTP and multipart probes are part of the scaffolder test suite.
 Benchmark fixtures are under `benchmarks`; results describe that workload and
 hardware, not a latency, memory or security guarantee.
+
+## Contribute
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, focused changes and review.
+The [development guide](docs/development.md) and
+[source map](docs/internals/index.md) explain internals and subsystem tests.
+Please follow [the Code of Conduct](CODE_OF_CONDUCT.md); report vulnerabilities
+through [the private reporting policy](SECURITY.md). Licensed under
+[MIT](LICENSE).

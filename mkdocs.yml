@@ -40,6 +40,7 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.highlight:
@@ -47,30 +48,49 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
   - tables
   - attr_list
   - md_in_html
 
 nav:
-  - Overview:
-      - Introduction: index.md
-      - Getting Started: getting-started.md
-      - Benchmarks & Comparison: benchmarks.md
-      - Architecture & Protocol: architecture.md
-  - Core Guides:
-      - Functions & Contracts: functions.md
-      - Data Types & Schemas: schemas.md
-      - Middlewares & Pipeline: middlewares.md
-      - Multi-Threading (Workers): workers.md
-      - Framework Adapters: adapters.md
-      - Interactive Documentation: interactive-docs.md
-  - Client SDK & React:
-      - Universal Client & Hooks: client.md
-      - File Uploads & Multipart: uploads.md
-  - Tooling & Operations:
-      - CLI & AI Scaffolding: cli.md
-      - Testing & Security Audits: testing.md
-      - Package Reference: api-reference.md
-      - Go Engine Sibling: crpc-go.md
+  - Start:
+      - Overview: index.md
+      - Install & Configure: getting-started.md
       - Release & Migration: migration.md
+  - User Guides:
+      - Functions & Contracts: functions.md
+      - Schemas: schemas.md
+      - Middleware & Authentication: middlewares.md
+      - Uploads & Multipart: uploads.md
+      - Seven HTTP Adapters: adapters.md
+      - Client SDK & React: client.md
+      - Workers: workers.md
+      - Interactive API Docs: interactive-docs.md
+      - CLI: cli.md
+      - In-Memory Testing: testing.md
+  - Reference:
+      - Public API: api-reference.md
+      - Protocol Overview: architecture.md
+      - Benchmarks & Limits: benchmarks.md
+      - Go Interoperability: crpc-go.md
+  - Contributor Guides:
+      - Contributing: contributing.md
+      - Development Setup: development.md
+      - Source Map & Design: internals/index.md
+      - Shared Protocol: internals/protocol.md
+      - Request Lifecycle: internals/lifecycle.md
+      - Discovery, Middleware & Context: internals/registration.md
+      - TypeBox & Errors: internals/validation.md
+      - Adapters, Parsers & Uploads: internals/transports.md
+      - Client, React/RN & Workers: internals/client-workers.md
+      - Embedded Renderer: internals/renderer.md
+      - CLI & Scaffolding: internals/tooling.md
+      - Testing & Safe Extension: internals/testing.md
+      - Release Engineering: internals/releasing.md
+  - Community:
+      - Security Policy: security.md
+      - Code of Conduct: code-of-conduct.md
+      - Go Contributor Docs: https://cellsweb.github.io/crpc-go/internals/

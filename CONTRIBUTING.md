@@ -38,7 +38,7 @@ older pnpm can read current workspace settings.
   optional React entrypoint. Keep browser/RN behavior distinct from Node engines.
 - packages/create-cellsweb-rpc-api: initializer, template tree and seven servers.
 - example: reference application and application-level tests; benchmarks: workloads,
-  not a production performance guarantee. docs/mkdocs.yml define the docs site.
+  not a production performance guarantee. docs/ and root mkdocs.yml define the docs site.
 
 Follow the surrounding TypeScript style and strict compiler settings. Preserve
 TSchema/Static relationships and public ESM/CommonJS declaration identities.
@@ -56,7 +56,7 @@ pnpm create:middleware -- --name tenantResolver --description 'Resolve tenant'
 ```
 
 Review generated constants.ts, run.ts, middlewares.ts and tests. Functions live
-under src/functions/<namespace>/<function>; middleware under src/middlewares/<name>.
+under `src/functions/<namespace>/<function>`; middleware under `src/middlewares/<name>`.
 Use defineMiddlewares attachments explicitly and implement real verification.
 Changes to generators require generated-project tests, not just template searches.
 Scaffold into a disposable app when experimenting instead of committing demo routes.
