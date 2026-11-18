@@ -1,7 +1,15 @@
 # Changelog
 
-Patch release targets: client1.0.25 and Go v1.0.2. Core1.0.34 and scaffolder1.0.30
-remain unchanged. See [release engineering](RELEASE.md) for publication gates.
+## Documentation restoration — core1.0.35 / client1.0.26 / scaffolder1.0.31
+
+- Restore substantial standalone package READMEs: executable quick starts,
+  schemas, middleware/authentication, file handling, client/React/React Native,
+  all adapters, project structure and developer workflows.
+- Restore the original centered CellsWeb logo on GitHub, npm and MkDocs overviews.
+- Include the existing CellsWeb MIT license in all three npm package tarballs.
+- Correct stale release-preparation wording while retaining useful migration history.
+- No runtime/API/export/dependency changes. Generated core^1.0.34 remains unchanged
+  and accepts1.0.35. Go stays v1.0.2; its tag/module are not republished.
 
 ## @cellsweb/rpc-client 1.0.25
 

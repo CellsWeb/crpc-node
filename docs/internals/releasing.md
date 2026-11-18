@@ -1,11 +1,11 @@
 # Release engineering and compatibility review
 
-The release-line targets are Node core 1.0.34/client 1.0.25/scaffolder 1.0.30
-and Go module/CLI v1.0.2. Core/scaffolder versions are unchanged. Publication requires explicit approval
-and public registry checks. The new client/Go versions were not published at
-preparation on2026-11-18; previous client1.0.24/Go v1.0.1 remain the public baseline.
-This page explains maintainer responsibilities;
-contributing a PR does not authorize pushing, tagging or publishing.
+Current documentation patch versions are Node core1.0.35/client1.0.26/scaffolder1.0.31,
+with runtime code/exports/dependencies unchanged from core1.0.34/client1.0.25/scaffolder1.0.30.
+Go module/CLI remains v1.0.2. The earlier client1.0.25 and Go v1.0.2 corrections
+are already publicly released; they must not be described as unpublished.
+Contributing a PR does not authorize pushing, tagging or publishing. Every release
+still requires author approval, validation and actual public-registry verification.
 
 ## Version and artifact boundaries
 

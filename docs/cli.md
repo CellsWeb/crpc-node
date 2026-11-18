@@ -7,7 +7,7 @@ development/builds rather than relying on global install ordering.
 Use the public initializer:
 
 ```sh
-npx create-cellsweb-rpc-api@1.0.30 my-api --framework=fastify --yes
+npx create-cellsweb-rpc-api@1.0.31 my-api --framework=fastify --yes
 cd my-api
 npm run create:function -- --ns catalog --name get --contentType json
 npm run create:middleware -- --name tenantResolver --description 'Resolve tenant'

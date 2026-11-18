@@ -1,6 +1,6 @@
 # Client SDK and React
 
-Install `@cellsweb/rpc-client@1.0.25` from npm. React is optional and
+Install `@cellsweb/rpc-client@1.0.26` from npm. React is optional and
 has its own `@cellsweb/rpc-client/react` entry. The package supplies JSON and
 multipart callers; see [installation](getting-started.md).
 
@@ -61,7 +61,7 @@ export function Greeting({ name }: { name: string }) {
 ```
 
 Hooks accept one options object. Query returns `data`, `loading`, `error`,
-`refetch`; mutation returns `mutate`, `loading`, `error`, `reset`. Hooks require
-RpcProvider. Query deduplication/re-render ordering does not replace server-side
+`refetch`; mutation returns `mutate`, `loading`, `error`, `reset`. Await mutate() for its response data; store that result in application state
+if needed. Hooks require RpcProvider. Query deduplication/re-render ordering does not replace server-side
 authorization or idempotency handling. Use [multipart](uploads.md) explicitly for
 file requests; never manually omit/mismatch the generated routing fields.

@@ -1,48 +1,38 @@
 # Release engineering
 
-## Patch release targets: client1.0.25 / Go v1.0.2
+## Documentation-only patch line
 
-Only @cellsweb/rpc-client moves to1.0.25; core1.0.34 and scaffolder1.0.30 are
-unchanged. The Go module and versioned CLI move together to v1.0.2. The client
-fix honors browser multipart fetchFn while retaining native FormData/XHR; the Go
-fix bounds stdio lines at2,097,152 bytes, including delimiters.
+The documentation restoration uses @cellsweb/rpc-core1.0.35,
+@cellsweb/rpc-client1.0.26 and create-cellsweb-rpc-api1.0.31. Their runtime code,
+exports and dependencies are unchanged from core1.0.34/client1.0.25/scaffolder1.0.30.
+Complete package READMEs and original branding are restored. Generated projects
+still require core^1.0.34, which accepts the new core patch; no template dependency
+change is needed. Publish only inspected exact tarballs after validation and approval.
 
-At preparation on2026-11-18 the new versions are not published. Versioned
-installation examples in these guides target this release line; confirm registry
-availability before use. Do not interpret metadata preparation as publication.
-Published baseline client1.0.24 / Go v1.0.1 remains available. Historical migration
-notes below are retained. Go's source/VCS fallback remains v1.0.0; only a versioned
-module installation selects SDK v1.0.2 automatically.
+Go remains **v1.0.2**. GitHub/MkDocs corrections do not require a new module tag.
+Never recreate or move v1.0.2 for a documentation-site update.
 
-After explicit approval, fast-forward/push the reviewed release heads without
-rewriting verified commits. Recheck version/tag absence, create an annotated root
-Go v1.0.2 tag at its exact approved head and verify public proxy/CLI/scaffold HTTP
-installation. Publish only the prepared client1.0.25 tarball with public access;
-no npm core/scaffolder publication is required. Finish fresh public installations
-and both Pages deployments. Use npm browser/passkey authentication interactively
-when requested; never bypass2FA or overwrite versions/tags.
+## Published runtime history
 
-## Previous published release
+Core1.0.34 and scaffolder1.0.30 include the verified hardening, adapter and docs
+control fixes. Client1.0.25 fixes browser multipart custom fetch while retaining
+native FormData/XHR. Go v1.0.2 includes bounded2,097,152-byte stdio lines; Unix
+framing, lifecycle and error semantics remain as documented.
 
-The previous coordinated public releases are @cellsweb/rpc-core@1.0.34,
-@cellsweb/rpc-client@1.0.24, create-cellsweb-rpc-api@1.0.30 and
-Go github.com/CellsWeb/crpc-go@v1.0.1. See [CHANGELOG.md](CHANGELOG.md) and
-[installation](docs/getting-started.md). The Node release source is
-320e65997db9c14cec8ab2ef15d745aab3894819; Go is
-c4b7966e4cc5dda0fdd6728f57f82b66fd2afe4b. Existing tags are immutable.
-
-The actual public CLI and npm initializer were tested in independent projects:
+Those versions are already public. Earlier wording that called client1.0.25 or
+Go v1.0.2 unpublished described preparation, not the current distribution state.
+The source heads are Node82d126735ecf0c5c53008b3e2f1213bb4b824031 and
+Go490b39cb381a0b7ca6da5bd3a7a42da694dc8e2b. The earlier client1.0.24/Go v1.0.1
+releases remain available for migration history, as does historical Go v1.0.0.
 
 ```sh
-npm create cellsweb-rpc-api@latest my-api -- --framework=node --yes
-# A pinned initializer is also available:
-npx create-cellsweb-rpc-api@1.0.30 my-api --framework=node --yes
+npm create cellsweb-rpc-api@latest my-api -- --framework=node --yes --pm=npm
+# Exact documentation-refresh initializer:
+npx create-cellsweb-rpc-api@1.0.31 my-api --framework=node --yes --pm=npm
 ```
 
-Go's versioned installed CLI generates a matching SDK dependency:
-
 ```sh
-go install github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.1
+go install github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.2
 crpc-go init my-go-api
 cd my-go-api
 go mod tidy
@@ -50,9 +40,8 @@ go build ./...
 go test ./...
 ```
 
-Source/VCS-built Go CLIs still select the older v1.0.0 fallback. Use an explicit
-Go workspace when intentionally selecting a local SDK checkout; the version
-printed by an arbitrary source binary does not pin its dependency.
+A versioned installed Go CLI selects its matching SDKv1.0.2. Source/VCS builds
+retain the older v1.0.0 fallback; use an explicit workspace for local SDK work.
 
 ## Checklist for future releases
 

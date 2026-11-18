@@ -2,8 +2,8 @@
 
 ## Released versions and prerequisites
 
-Release versions: **@cellsweb/rpc-core@1.0.34**, **@cellsweb/rpc-client@1.0.25**,
-**create-cellsweb-rpc-api@1.0.30**. Node 24 LTS is primary; the declared floor is
+Release versions: **@cellsweb/rpc-core@1.0.35**, **@cellsweb/rpc-client@1.0.26**,
+**create-cellsweb-rpc-api@1.0.31**. Node 24 LTS is primary; the declared floor is
 Node 24.0.0. Bun 1.3.11 is tested separately for Bun/Elysia execution.
 
 ## Scaffold a project
@@ -17,7 +17,7 @@ npm run dev
 ```
 
 For an exact initializer version use
-`npx create-cellsweb-rpc-api@1.0.30 my-api --framework=node --yes`.
+`npx create-cellsweb-rpc-api@1.0.31 my-api --framework=node --yes`.
 Choose `bun|elysia|express|fastify|hono|node|ultimate-express` as framework.
 For automation add `--skip-install`, then install the generated manifest yourself.
 Generated applications require core`^1.0.34`, resolved from public npm; no local
@@ -27,9 +27,9 @@ run its CLI under Bun when native Bun execution is wanted.
 For an existing application, install only the package needed:
 
 ```sh
-npm install @cellsweb/rpc-core@1.0.34
+npm install @cellsweb/rpc-core@1.0.35
 # In a client project:
-npm install @cellsweb/rpc-client@1.0.25
+npm install @cellsweb/rpc-client@1.0.26
 ```
 
 The scaffold contains src/server.ts, src/env.ts, src/functions, src/middlewares,

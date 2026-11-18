@@ -1,6 +1,8 @@
 # Release and migration
 
-Release versions: core 1.0.34, client 1.0.25 and scaffolder 1.0.30. Install them
+Documentation patch versions: core 1.0.35, client 1.0.26 and scaffolder 1.0.31.
+Runtime implementations, public APIs and dependencies are unchanged from
+core1.0.34/client1.0.25/scaffolder1.0.30. Install the documentation patches
 from public npm; no local tarball substitution is needed. These supersede
 core 1.0.33/client 1.0.23/scaffolder 1.0.29 for this hardening release. Preserve the
 following migration notes when upgrading an existing application.
