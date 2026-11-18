@@ -10,9 +10,8 @@ npm run build
 npm start
 ```
 
-The generated core requirement is ^1.0.34. Before that candidate is published,
-select its local tarball explicitly for local testing. The public older SDK does
-not contain every reviewed fix. See the source repository RELEASE.md.
+The generated core requirement is ^1.0.34 and resolves from public npm.
+Use ordinary package installation; no local SDK checkout or override is required.
 
 Use npm run dev for Node development. For Bun select Bun execution, for example
 `bun run src/server.ts` with the Bun-native template. The local crpc CLI supplies

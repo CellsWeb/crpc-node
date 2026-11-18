@@ -1,6 +1,6 @@
 # @cellsweb/rpc-core
 
-Candidate 1.0.34, not published by this work. Public 1.0.33 predates this candidate.
+Public release **1.0.34**: `npm install @cellsweb/rpc-core@1.0.34`.
 Node >=24.0.0 (Node 24 LTS primary); Bun is tested independently. The core exports
 CoreRPC, TypeBox/file helpers, middleware types, adapters and the local crpc CLI.
 

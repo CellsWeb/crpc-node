@@ -4,16 +4,13 @@ Typed RPC functions, middleware, JSON/multipart intake and server-rendered docs
 for Node and Bun. The API endpoint accepts `{namespace,functionName,data}`;
 handlers remain independent of the HTTP adapter.
 
-## Release status
+## Install the released packages
 
-This branch prepares **core 1.0.34, client 1.0.24 and scaffolder 1.0.30**. They are
-not published by this work. Public versions checked during preparation are
-core 1.0.33/client 1.0.23/scaffolder 1.0.29 and do not contain every candidate fix.
-Use the local tarball workflow in [RELEASE.md](RELEASE.md) for candidate testing.
-After approved publication, the normal scaffold command is:
+Public releases: **@cellsweb/rpc-core@1.0.34**, **@cellsweb/rpc-client@1.0.24** and
+**create-cellsweb-rpc-api@1.0.30**. Generate an application from npm:
 
 ```sh
-npx create-cellsweb-rpc-api@1.0.30 my-api --framework=node
+npm create cellsweb-rpc-api@latest my-api -- --framework=node --yes
 cd my-api
 npm run typecheck
 npm run build
@@ -21,10 +18,15 @@ npm test
 npm start
 ```
 
-Node 24 LTS is the primary runtime; packages declare Node >=24.0.0. Older Node
-versions may work naturally but are not promised by that range. Bun is tested
-separately (1.3.11); no Node 20 compatibility shim was introduced. Choose from
-Node, Bun, Elysia, Express, Fastify, Hono and Ultimate Express templates.
+For reproducible scaffolding, use `npx create-cellsweb-rpc-api@1.0.30 my-api
+--framework=node --yes`. For an existing application, install the SDK you need:
+`npm install @cellsweb/rpc-core@1.0.34` or
+`npm install @cellsweb/rpc-client@1.0.24`.
+
+Node 24 LTS is primary; packages require Node>=24.0.0. Verified toolchains include
+Node 24.0.0/24.15.0 and Bun 1.3.11. Choose Node, Bun, Elysia, Express, Fastify, Hono
+or Ultimate Express. Older Node versions may work naturally but are outside the
+declared support range. See [installation](docs/getting-started.md).
 
 ## Contracts and execution
 
@@ -50,7 +52,7 @@ metadata, never resolved option values or defaults.
 - [Client and React](docs/client.md), [uploads](docs/uploads.md), [adapters](docs/adapters.md)
 - [Documentation controls](docs/interactive-docs.md), [testing](docs/testing.md), [CLI](docs/cli.md)
 - [Protocol and buffering](docs/architecture.md), [Go interoperability](docs/crpc-go.md)
-- [Candidate migration notes](CHANGELOG.md), [release gates](RELEASE.md)
+- [Release notes](CHANGELOG.md), [release engineering](RELEASE.md)
 
 For source development: `pnpm install`, `pnpm build`, `pnpm typecheck`, `pnpm test`.
 Seven-adapter HTTP and multipart probes are part of the scaffolder test suite.

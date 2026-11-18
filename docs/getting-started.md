@@ -1,36 +1,40 @@
 # Getting started
 
-## Release status
+## Released versions and prerequisites
 
-Prepared, unpublished candidate versions: `@cellsweb/rpc-core@1.0.34`,
-`@cellsweb/rpc-client@1.0.24`, `create-cellsweb-rpc-api@1.0.30`.
-Public latest checked during preparation was 1.0.33/1.0.23/1.0.29 respectively.
-It predates this candidate. For local validation use the repository's RELEASE.md
-tarball workflow; do not expect an unpublished version to resolve from npm.
+Public versions: **@cellsweb/rpc-core@1.0.34**, **@cellsweb/rpc-client@1.0.24**,
+**create-cellsweb-rpc-api@1.0.30**. Node 24 LTS is primary; the declared floor is
+Node 24.0.0. Bun 1.3.11 is tested separately for Bun/Elysia execution.
 
-Node 24 LTS is primary. All public packages/generated apps declare Node >=24.0.0.
-Bun 1.3.11 is tested separately for Bun/Elysia execution. Older Node may work, but
-is outside this declared range; no older-runtime shim is required or supplied.
-
-## Scaffold after publication
+## Scaffold a project
 
 ```sh
-npx create-cellsweb-rpc-api@1.0.30 my-api --framework=node
+npm create cellsweb-rpc-api@latest my-api -- --framework=node --yes
 cd my-api
 npm run typecheck
 npm test
 npm run dev
 ```
 
-Use `--framework=bun|elysia|express|fastify|hono|node|ultimate-express`.
-For automation add `--yes --skip-install`, then install the generated manifest
-explicitly. Generated projects require core`^1.0.34`; publish core before the
-new scaffolder. For Bun use `bun run` with the selected Bun template; tests also
-exercise the full generated project under its supported runtime.
+For an exact initializer version use
+`npx create-cellsweb-rpc-api@1.0.30 my-api --framework=node --yes`.
+Choose `bun|elysia|express|fastify|hono|node|ultimate-express` as framework.
+For automation add `--skip-install`, then install the generated manifest yourself.
+Generated applications require core`^1.0.34`, resolved from public npm; no local
+SDK tarball or checkout is necessary. For Bun, use the selected Bun template and
+run its CLI under Bun when native Bun execution is wanted.
 
-The project contains `src/server.ts`, `src/env.ts`, `src/functions`,
-`src/middlewares`, utilities, schemas and sample tests. Replace the sample auth
-stub with your application's credential verification before relying on it.
+For an existing application, install only the package needed:
+
+```sh
+npm install @cellsweb/rpc-core@1.0.34
+# In a client project:
+npm install @cellsweb/rpc-client@1.0.24
+```
+
+The scaffold contains src/server.ts, src/env.ts, src/functions, src/middlewares,
+utilities, schemas and sample tests. Replace the sample authentication logic with
+your application's credential verification before relying on it.
 
 ```sh
 curl http://localhost:4000/rpc -H 'Content-Type: application/json' \

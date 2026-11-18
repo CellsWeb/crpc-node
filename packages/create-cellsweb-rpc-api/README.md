@@ -1,11 +1,14 @@
 # create-cellsweb-rpc-api
 
-Prepared candidate 1.0.30, not published by this work. Public 1.0.29 is older.
-The candidate generates core^1.0.34 and Node >=24.0.0; publish that core before
-publishing this scaffolder. Test unpublished candidates with local packed SDK
-dependencies rather than resolving the older public SDK silently.
+Public release **1.0.30** generates a core`^1.0.34` dependency and requires
+Node>=24.0.0. Both packages are available from public npm.
 
-After publication: `npx create-cellsweb-rpc-api@1.0.30 my-api --framework=node`.
+```sh
+npm create cellsweb-rpc-api@latest my-api -- --framework=node --yes
+# Or use the pinned executable:
+npx create-cellsweb-rpc-api@1.0.30 my-api --framework=node --yes
+```
+
 Supported framework names are node, bun, elysia, express, fastify, hono and
 ultimate-express. Use --yes --skip-install for explicit automation, then install,
 typecheck, build and test. Bun 1.3.11 is tested separately for Bun/Elysia execution;

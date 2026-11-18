@@ -5,7 +5,7 @@ Benchmark workloads and historical results are maintained in the repository's
 hardware, concurrency, payload, limits and warmup when comparing results.
 
 Those numbers are workload observations, not current guarantees of latency,
-throughput, memory, security or adapter superiority. This candidate's release
+throughput, memory, security or adapter superiority. This release's
 gates are correctness, real HTTP uploads/cleanup, clean installations and
 schema/auth behavior. No new performance benchmark was executed for the release
 stabilization work. Go transport buffering and Fetch formData buffering must be

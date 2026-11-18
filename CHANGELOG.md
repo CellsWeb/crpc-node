@@ -1,8 +1,7 @@
-# Candidate changelog
+# Changelog
 
-These versions are prepared on this branch and are **not published**. Approval,
-independent verification and the release steps in [RELEASE.md](RELEASE.md) are
-required before distribution. Existing public versions predate this candidate.
+Public release: core 1.0.34, client 1.0.24 and scaffolder 1.0.30. See
+[installation](docs/getting-started.md) and [release engineering](RELEASE.md).
 
 ## @cellsweb/rpc-core 1.0.34
 

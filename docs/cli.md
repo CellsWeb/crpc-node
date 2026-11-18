@@ -4,7 +4,7 @@ The scaffolder creates a project; `@cellsweb/rpc-core` supplies its runtime `crp
 binary. Both packages expose that bin name, so use the project-local core CLI for
 development/builds rather than relying on global install ordering.
 
-After the candidate is actually published:
+Use the public initializer:
 
 ```sh
 npx create-cellsweb-rpc-api@1.0.30 my-api --framework=fastify --yes
@@ -16,8 +16,9 @@ npm run build
 npm start
 ```
 
-For local unpublished candidate usage, install tarballs as described in the
-repository RELEASE.md. `--skip-install` leaves dependency installation to you.
+The equivalent npm initializer is `npm create cellsweb-rpc-api@latest`.
+`--skip-install` leaves dependency installation to you. See the contributor
+release guide for intentionally testing unpublished local changes.
 
 `crpc dev [entry]` runs a TS watcher; `crpc build` runs tsc then tsc-alias with
 emitted-extension resolution; `crpc start [entry]` executes production JS. The

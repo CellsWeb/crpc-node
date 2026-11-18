@@ -1,8 +1,8 @@
 # Client SDK and React
 
-The base package supplies fetch RPC and multipart helpers. React is optional and
-has its own `@cellsweb/rpc-client/react` entry. See [release status](getting-started.md)
-before installing this unpublished candidate's version.
+Install `@cellsweb/rpc-client@1.0.24` from public npm. React is optional and
+has its own `@cellsweb/rpc-client/react` entry. The package supplies JSON and
+multipart callers; see [installation](getting-started.md).
 
 <!-- compile: client.ts -->
 ```typescript

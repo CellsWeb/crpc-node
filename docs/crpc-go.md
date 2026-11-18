@@ -1,9 +1,9 @@
 # Go interoperability
 
 Node and Go share the HTTP request shape and default application-error envelopes.
-Go 1.0.1 is the prepared hardened candidate; public v1.0.0 predates its verified
-fixes. Use a workspace for local Go candidate testing and the exact new module
-version after it is actually published. See the Go repository's current guide.
+Go v1.0.1 is publicly available and includes the hardening fixes. Install
+`github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.1` for a CLI that generates the
+matching SDK dependency. Local workspaces are for deliberate SDK development.
 
 Both runtimes preserve explicit HTTP null and default omitted HTTP data to {}.
 TypeBox unions and native Go optional/nullable schemas still have different

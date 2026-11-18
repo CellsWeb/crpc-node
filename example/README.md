@@ -7,4 +7,4 @@ test, dev/build/start scripts. Node 24 LTS is primary; source guide examples are
 
 Docs are configured globally; deprecated isPublic is ignored. The example is
 not automatically a production identity provider or security audit certificate.
-Use ../RELEASE.md for clean candidate installs and ../CHANGELOG.md for migration.
+Use ../RELEASE.md for release engineering and ../CHANGELOG.md for migration.
