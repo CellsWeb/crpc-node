@@ -39,6 +39,10 @@ helper or application-owned unique destinations for persistence. Do not use a
 raw client filename as a trusted destination. Complete persistence during the
 handler; framework-owned temporary files are cleaned when processing finishes.
 
+When submitting non-file form fields alongside file uploads (such as ages, flags,
+or counts), use `FormNum()` and `FormBool()` in `inputSchema` so textual multipart
+field values are decoded into primitive numbers and booleans; see [Schemas](schemas.md).
+
 Both routing headers (`X-CRPC-Namespace`/`X-CRPC-Function`) or neither are allowed.
 When present they must agree with redundant body routing fields. Headerless
 routing remains supported; put routing text fields before files. Authentication
