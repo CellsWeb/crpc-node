@@ -3,10 +3,9 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Core RPC Client implementation for CellsWeb RPC APIs.
  *
- * IMPORTANT: Multipart requests use XMLHttpRequest (not fetch) because React
- * Native's New Architecture (Hermes native fetch) does not support the RN-style
- * { uri, name, type } file objects in FormData. XHR still routes through
- * RCTNetworking which correctly handles that format.
+ * Standard web FormData uses the configured fetchFn. React Native bridge
+ * FormData exposes getParts() for native URI-file serialization and retains
+ * the XMLHttpRequest transport for compatibility with RCTNetworking.
  */
 
 import { RpcError } from "./errors";
@@ -29,9 +28,8 @@ async function resolveDynamicValue<T>(val?: DynamicValue<T>): Promise<T | undefi
 
 /**
  * Send a multipart FormData request via XMLHttpRequest.
- * XHR is used instead of fetch because React Native's New Architecture
- * native fetch does not support { uri, name, type } file objects in FormData.
- * XHR routes through RCTNetworking which handles them correctly.
+ * Retained for React Native bridge FormData, including { uri, name, type }
+ * file parts passed through RCTNetworking.
  */
 function sendMultipartXHR<TData>(
   url: string,
@@ -210,15 +208,18 @@ export async function rawRpcRequest<TData = unknown>(
         mergedData as Record<string, unknown>,
       );
 
-      // Delete any inherited Content-Type — XHR sets it automatically with boundary
+      // Let the selected transport supply the multipart boundary.
       for (const k of Object.keys(headers)) {
         if (k.toLowerCase() === "content-type") delete headers[k];
       }
 
-      // Use XHR for multipart: React Native New Architecture's native fetch
-      // does NOT support { uri, name, type } file objects in FormData.
-      // XHR routes through RCTNetworking which handles them correctly.
-      if (typeof XMLHttpRequest !== "undefined") {
+      // Native FormData's getParts() is consumed by the RN networking bridge.
+      // Check the representation, not navigator/Hermes globals shared by shims.
+      if (
+        typeof XMLHttpRequest !== "undefined" &&
+        "getParts" in formData &&
+        typeof formData.getParts === "function"
+      ) {
         return await sendMultipartXHR<TData>(
           targetUrl,
           formData,
@@ -228,7 +229,7 @@ export async function rawRpcRequest<TData = unknown>(
         );
       }
 
-      // Fallback to fetch for web environments
+      // Standard web FormData honors fetchFn even when XHR is also available.
       const response = await fetchFn(targetUrl, {
         method: "POST",
         headers,

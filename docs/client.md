@@ -20,6 +20,33 @@ Forward current credentials via headers, not a caller-supplied trusted context.
 Do not infer application success solely from HTTP 200. `rawRpcRequest` is also a
 standalone unwrapped caller; its name does not mean it returns the raw envelope.
 
+## Multipart fetch configuration (unreleased source)
+
+The source fix pending the next client release makes standard browser FormData
+use the configured fetchFn even when XMLHttpRequest exists. **Published1.0.24
+still bypasses fetchFn for browser multipart when XHR is available.** Installing
+that version does not install this unreleased correction.
+
+A web fetch wrapper can supply credentials and intercept multipart requests:
+
+```typescript
+const rpcWithCookies = createRpcClient({
+  baseUrl: 'https://api.example.com/rpc',
+  fetchFn: (url, init) => fetch(url, { ...init, credentials: 'include' }),
+});
+```
+
+Cross-origin cookies also require the server's appropriate CORS configuration.
+Preserve the supplied headers, body and signal in wrappers; use new Headers when
+editing headers. Never supply a manual multipart Content-Type/boundary. Timeout,
+abort and structured RPC error handling remain the client's responsibility.
+
+React Native bridge FormData with getParts() retains the existing XHR path for
+native URI-file compatibility, so fetchFn does not intercept that path. Configure
+credentials through defaultHeaders/per-request headers there. No runtime global
+marker, new transport option or upload-progress API is introduced. Top-level
+files/direct arrays remain supported and nested files remain rejected.
+
 <!-- compile: react-client.tsx -->
 ```tsx
 import type { ReactNode } from 'react';

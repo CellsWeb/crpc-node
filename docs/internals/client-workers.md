@@ -23,7 +23,7 @@ flowchart TD
   R --> K{"Multipart?"}
   K -->|No| J["JSON envelope via fetchFn"]
   K -->|Yes| F["buildRpcFormData + routing headers"]
-  F --> X{"XMLHttpRequest exists?"}
+  F --> X{"Native getParts FormData + XHR?"}
   X -->|Yes| H["sendMultipartXHR"]
   X -->|No| W["fetchFn with FormData"]
   J --> P["Parse RPC envelope / unwrap data / RpcError"]
@@ -39,12 +39,24 @@ reserved data keys namespace/functionName to _data_namespace/_data_functionName.
 Forbidden prototype keys are excluded. Nested file objects are rejected before
 transmission; ordinary nested JSON text is not a nested file transport feature.
 
-When XMLHttpRequest exists, multipart uses XHR, including ordinary browsers.
-That branch does **not** use a configured fetchFn. JSON and multipart without XHR
-use fetchFn. RN supports normalized {uri,name,type} descriptors via XHR;
-FormData content type/boundary is left to the transport. Do not document RN-only
-XHR selection or promise custom fetch interception for all browser uploads.
-Changing this behavior is runtime work requiring separate compatibility review.
+Standard web FormData uses fetchFn even when XMLHttpRequest exists. Native bridge
+FormData exposes a callable getParts() consumed by React Native's networking
+bridge; that representation retains XHR when available, including forced text
+multipart, and does **not** invoke fetchFn. JSON and multipart without native XHR
+use fetchFn. This checks the constructed FormData representation rather than
+guessing the runtime from navigator.product or a Hermes global. A custom FormData
+polyfill must preserve the native bridge contract to use that compatibility path.
+
+RN URI descriptors remain normalized as {uri,name,type}; this does not make them
+uploadable by ordinary browser FormData. File arrays and nested-file rejection
+are unchanged. Let the selected transport supply Content-Type/boundary. Browser
+custom fetch wrappers must forward the supplied headers, body and AbortSignal.
+The SDK has no upload-progress callback API; native XHR cancellation/error handlers
+remain unchanged. Full device/Hermes file I/O requires a native application test.
+
+This source correction is pending a client release. Published client1.0.24 uses
+the older XHR-whenever-present selection, so its browser multipart requests still
+bypass fetchFn. See [client transport configuration](../client.md#multipart-fetch-configuration-unreleased-source).
 
 ## React entrypoint
 

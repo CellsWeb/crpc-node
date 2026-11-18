@@ -69,7 +69,7 @@ abort handling and temporary-file ownership.
 | Native Node / Fetch / Go HTTP | Stream-driven Busboy, runtime-buffered formData, and transport-buffered fasthttp have different resource bounds. |
 | HTTP / in-memory / IPC | HTTP omission defaults are not a promise about missing input on every call API. Return types and error/details/meta differ. |
 | Unix / stdio IPC | Unix accepts bounded newline/length-prefixed requests; stdio uses a Scanner and has a smaller token boundary. |
-| Browser / RN / Node client | Multipart chooses XHR whenever it exists; do not promise a custom fetchFn runs in browsers for files. |
+| Browser / RN / Node client | Source web FormData uses fetchFn; native getParts-compatible FormData retains XHR when available. Published client1.0.24 still selects XHR whenever present. |
 
 Large integers, JSON duplicate members, extra properties, null outputs/omitempty,
 Unicode limits, details fields and cancellation need explicit fixtures when
