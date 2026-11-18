@@ -1,6 +1,6 @@
 # Client SDK and React
 
-Install `@cellsweb/rpc-client@1.0.24` from public npm. React is optional and
+Install `@cellsweb/rpc-client@1.0.25` from npm. React is optional and
 has its own `@cellsweb/rpc-client/react` entry. The package supplies JSON and
 multipart callers; see [installation](getting-started.md).
 
@@ -20,12 +20,11 @@ Forward current credentials via headers, not a caller-supplied trusted context.
 Do not infer application success solely from HTTP 200. `rawRpcRequest` is also a
 standalone unwrapped caller; its name does not mean it returns the raw envelope.
 
-## Multipart fetch configuration (unreleased source)
+## Multipart fetch configuration
 
-The source fix pending the next client release makes standard browser FormData
-use the configured fetchFn even when XMLHttpRequest exists. **Published1.0.24
-still bypasses fetchFn for browser multipart when XHR is available.** Installing
-that version does not install this unreleased correction.
+Client1.0.25 makes standard browser FormData use the configured fetchFn even
+when XMLHttpRequest exists. Client1.0.24 selected XHR whenever available and
+bypassed browser multipart fetch wrappers; upgrade the client to obtain the fix.
 
 A web fetch wrapper can supply credentials and intercept multipart requests:
 

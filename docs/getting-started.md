@@ -2,7 +2,7 @@
 
 ## Released versions and prerequisites
 
-Public versions: **@cellsweb/rpc-core@1.0.34**, **@cellsweb/rpc-client@1.0.24**,
+Release versions: **@cellsweb/rpc-core@1.0.34**, **@cellsweb/rpc-client@1.0.25**,
 **create-cellsweb-rpc-api@1.0.30**. Node 24 LTS is primary; the declared floor is
 Node 24.0.0. Bun 1.3.11 is tested separately for Bun/Elysia execution.
 
@@ -29,7 +29,7 @@ For an existing application, install only the package needed:
 ```sh
 npm install @cellsweb/rpc-core@1.0.34
 # In a client project:
-npm install @cellsweb/rpc-client@1.0.24
+npm install @cellsweb/rpc-client@1.0.25
 ```
 
 The scaffold contains src/server.ts, src/env.ts, src/functions, src/middlewares,

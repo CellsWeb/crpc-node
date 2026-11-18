@@ -1,6 +1,6 @@
 # @cellsweb/rpc-client
 
-Public release **1.0.24**: `npm install @cellsweb/rpc-client@1.0.24`. Node
+Client **1.0.25**: `npm install @cellsweb/rpc-client@1.0.25`. Node
 tooling/runtime policy is >=24.0.0. Browser/React Native fetch and file support
 remain separate from Node's engine declaration.
 

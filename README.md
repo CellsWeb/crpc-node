@@ -4,9 +4,9 @@ Typed RPC functions, middleware, JSON/multipart intake and server-rendered docs
 for Node and Bun. The API endpoint accepts `{namespace,functionName,data}`;
 handlers remain independent of the HTTP adapter.
 
-## Install the released packages
+## Install the packages
 
-Public releases: **@cellsweb/rpc-core@1.0.34**, **@cellsweb/rpc-client@1.0.24** and
+Release versions: **@cellsweb/rpc-core@1.0.34**, **@cellsweb/rpc-client@1.0.25** and
 **create-cellsweb-rpc-api@1.0.30**. Generate an application from npm:
 
 ```sh
@@ -21,7 +21,7 @@ npm start
 For reproducible scaffolding, use `npx create-cellsweb-rpc-api@1.0.30 my-api
 --framework=node --yes`. For an existing application, install the SDK you need:
 `npm install @cellsweb/rpc-core@1.0.34` or
-`npm install @cellsweb/rpc-client@1.0.24`.
+`npm install @cellsweb/rpc-client@1.0.25`.
 
 Node 24 LTS is primary; packages require Node>=24.0.0. Verified toolchains include
 Node 24.0.0/24.15.0 and Bun 1.3.11. Choose Node, Bun, Elysia, Express, Fastify, Hono

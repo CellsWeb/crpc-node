@@ -1,6 +1,6 @@
 # Public API reference
 
-This describes public core 1.0.34 and client 1.0.24 exports. See
+This describes core 1.0.34 and client 1.0.25 exports. See
 [installation](getting-started.md) and the generated package declarations.
 
 `@cellsweb/rpc-core` exports CoreRPC, CoreRpcOptions, middleware/registry types,

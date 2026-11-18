@@ -1,7 +1,16 @@
 # Changelog
 
-Public release: core 1.0.34, client 1.0.24 and scaffolder 1.0.30. See
-[installation](docs/getting-started.md) and [release engineering](RELEASE.md).
+Patch release targets: client1.0.25 and Go v1.0.2. Core1.0.34 and scaffolder1.0.30
+remain unchanged. See [release engineering](RELEASE.md) for publication gates.
+
+## @cellsweb/rpc-client 1.0.25
+
+- Honor custom/default fetch for browser multipart FormData even when XHR exists.
+  Keep native getParts-compatible FormData on the existing XHR path when available.
+- Preserve file bytes, direct file arrays, routing headers, automatic boundaries,
+  abort/timeout behavior and RPC error envelopes. No public API or dependency change.
+- Browser integrations intercepting global XHR should use fetchFn instead.
+  Native-device file I/O is not newly certified; the native XHR implementation is unchanged.
 
 ## @cellsweb/rpc-core 1.0.34
 

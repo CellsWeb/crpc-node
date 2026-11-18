@@ -2,7 +2,7 @@
 
 Build schema-validated RPC functions with a shared middleware pipeline across
 Node/Bun HTTP adapters. See [release status and installation](getting-started.md)
-for public core 1.0.34, client 1.0.24 and scaffolder 1.0.30.
+for core 1.0.34, client 1.0.25 and scaffolder 1.0.30.
 
 - [Functions](functions.md) and [schemas](schemas.md)
 - [Middleware and authentication](middlewares.md)

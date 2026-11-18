@@ -54,9 +54,8 @@ custom fetch wrappers must forward the supplied headers, body and AbortSignal.
 The SDK has no upload-progress callback API; native XHR cancellation/error handlers
 remain unchanged. Full device/Hermes file I/O requires a native application test.
 
-This source correction is pending a client release. Published client1.0.24 uses
-the older XHR-whenever-present selection, so its browser multipart requests still
-bypass fetchFn. See [client transport configuration](../client.md#multipart-fetch-configuration-unreleased-source).
+Client1.0.25 includes this correction;1.0.24 and older select XHR whenever it
+exists. See [client transport configuration](../client.md#multipart-fetch-configuration).
 
 ## React entrypoint
 

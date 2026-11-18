@@ -1,7 +1,10 @@
 # Release engineering and compatibility review
 
-The public coordinated baseline is Node core 1.0.34/client 1.0.24/scaffolder 1.0.30
-and Go module/CLI v1.0.1. This page explains future maintainer responsibilities;
+The release-line targets are Node core 1.0.34/client 1.0.25/scaffolder 1.0.30
+and Go module/CLI v1.0.2. Core/scaffolder versions are unchanged. Publication requires explicit approval
+and public registry checks. The new client/Go versions were not published at
+preparation on2026-11-18; previous client1.0.24/Go v1.0.1 remain the public baseline.
+This page explains maintainer responsibilities;
 contributing a PR does not authorize pushing, tagging or publishing.
 
 ## Version and artifact boundaries
@@ -17,7 +20,7 @@ Go is one root module, github.com/CellsWeb/crpc-go. Root tags select both SDK an
 cmd/crpc-go; no separate invented CLI tag is needed. An installed versioned CLI
 uses its module version for the generated dependency. Source/VCS builds still
 use the real older v1.0.0 fallback; select a local SDK explicitly with a workspace.
-A CLI printing1.0.1 is not by itself evidence of generated SDK selection.
+A CLI printing1.0.2 is not by itself evidence of generated SDK selection.
 
 ## Review and integration gates
 

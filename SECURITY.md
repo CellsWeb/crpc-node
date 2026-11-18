@@ -29,8 +29,8 @@ versions and release guidance during triage.
 
 ## Release context and responsibilities
 
-The current released baseline is Node core 1.0.34/client 1.0.24/scaffolder 1.0.30 and
-Go v1.0.1. Include the exact installed version when reporting, including older
+The release-line installation guides and changelogs identify package/module
+versions. Include your exact installed versions when reporting, including older
 versions if relevant. There is no published long-term-support matrix here.
 
 Application middleware owns credential verification and authorization. Generated

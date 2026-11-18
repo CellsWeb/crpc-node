@@ -1,8 +1,8 @@
 # Go interoperability
 
 Node and Go share the HTTP request shape and default application-error envelopes.
-Go v1.0.1 is publicly available and includes the hardening fixes. Install
-`github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.1` for a CLI that generates the
+Go v1.0.2 includes bounded stdio framing and the earlier hardening fixes. Install
+`github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.2` for a CLI that generates the
 matching SDK dependency. Local workspaces are for deliberate SDK development.
 
 Both runtimes preserve explicit HTTP null and default omitted HTTP data to {}.

@@ -1,8 +1,30 @@
 # Release engineering
 
-## Published release
+## Patch release targets: client1.0.25 / Go v1.0.2
 
-The coordinated public releases are @cellsweb/rpc-core@1.0.34,
+Only @cellsweb/rpc-client moves to1.0.25; core1.0.34 and scaffolder1.0.30 are
+unchanged. The Go module and versioned CLI move together to v1.0.2. The client
+fix honors browser multipart fetchFn while retaining native FormData/XHR; the Go
+fix bounds stdio lines at2,097,152 bytes, including delimiters.
+
+At preparation on2026-11-18 the new versions are not published. Versioned
+installation examples in these guides target this release line; confirm registry
+availability before use. Do not interpret metadata preparation as publication.
+Published baseline client1.0.24 / Go v1.0.1 remains available. Historical migration
+notes below are retained. Go's source/VCS fallback remains v1.0.0; only a versioned
+module installation selects SDK v1.0.2 automatically.
+
+After explicit approval, fast-forward/push the reviewed release heads without
+rewriting verified commits. Recheck version/tag absence, create an annotated root
+Go v1.0.2 tag at its exact approved head and verify public proxy/CLI/scaffold HTTP
+installation. Publish only the prepared client1.0.25 tarball with public access;
+no npm core/scaffolder publication is required. Finish fresh public installations
+and both Pages deployments. Use npm browser/passkey authentication interactively
+when requested; never bypass2FA or overwrite versions/tags.
+
+## Previous published release
+
+The previous coordinated public releases are @cellsweb/rpc-core@1.0.34,
 @cellsweb/rpc-client@1.0.24, create-cellsweb-rpc-api@1.0.30 and
 Go github.com/CellsWeb/crpc-go@v1.0.1. See [CHANGELOG.md](CHANGELOG.md) and
 [installation](docs/getting-started.md). The Node release source is
